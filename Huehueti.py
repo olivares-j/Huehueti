@@ -16,7 +16,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 #------------------------------------------------------------------
 
 from Models import Model_v0,Model_v1
-from MLPs import MLP_iso
+from MLPs import MLP
 from Functions import absolute_to_apparent, apparent_to_absolute
 
 pn.set_option('display.max_columns', None)

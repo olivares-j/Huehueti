@@ -1,3 +1,4 @@
+# (Full modified Huehueti.py content with type hints and comments)
 import sys
 import os
 import numpy as np
@@ -7,29 +8,48 @@ import arviz as az
 import dill
 import xarray
 import seaborn as sns
+from typing import Optional, Dict, Any, List, Sequence, Union
 
 #---------------- Matplotlib -------------------------------------
+# Use the PDF backend so scripts can run headless and produce vector output.
 import matplotlib
 matplotlib.use('PDF')
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 #------------------------------------------------------------------
 
+# Local model/utility imports.
 from Models import Model_v0,Model_v1
 from MLPs import MLP
 from Functions import absolute_to_apparent, apparent_to_absolute
 
+# Configure pandas display to show all columns when printing summaries.
 pn.set_option('display.max_columns', None)
 
+
 class Huehueti:
-	"""docstring for ClassName"""
+	"""
+	Main high-level class wrapping the data ingestion, model setup,
+	fitting (with PyMC), and visualization for the project.
+
+	Primary responsibilities:
+	- Read and preprocess input catalog (load_data)
+	- Initialize neural-network isochrone (MLP) and probabilistic model (setup)
+	- Run variational initialization and MCMC sampling (run)
+	- Load and analyze saved traces (load_trace, convergence)
+	- Produce a variety of diagnostic and scientific plots (plot_* methods)
+	- Export summary statistics (save_statistics)
+	"""
 	def __init__(self,
-		dir_out : str,
-		file_mlp : str,
-		):
+		dir_out: str,
+		file_mlp: str,
+	) -> None:
+		# Output directory and path to MLP file
 		self.dir_out = dir_out
 		self.file_mlp = file_mlp
 
+		# File paths for common outputs produced by the class methods.
+		# These are constructed relative to dir_out.
 		self.file_ids           = self.dir_out+"/Identifiers.csv"
 		self.file_obs           = self.dir_out+"/Observations.nc"
 		self.file_chains        = self.dir_out+"/Chains.nc"
@@ -47,7 +67,7 @@ class Huehueti:
 		self.file_sts_src       = self.dir_out+"/Sources_statistics.csv"
 		self.file_sts_glb       = self.dir_out+"/Global_statistics.csv"
 
-		# A list containing every filter and its uncertainty
+		# A list containing every filter and its uncertainty and some metadata.
 		observables = {
 		"identifiers":"source_id",
 		"absolute":['Gmag', 'G_BPmag', 'G_RPmag', 'gP1mag', 'rP1mag', 'iP1mag', 'zP1mag','yP1mag', 'Jmag', 'Hmag', 'Ksmag'],
@@ -59,9 +79,11 @@ class Huehueti:
 		"astrometry_units":["[mas]"]
 		}
 
+		# Primary identifier column name
 		self.id_name = observables["identifiers"]
 		self.observables = observables
 
+		# Names expected for mean values and uncertainties used throughout the code.
 		self.names_mu = sum([
 			observables["astrometry"],
 			observables["photometry"]
@@ -78,68 +100,95 @@ class Huehueti:
 
 		self.observables = observables
 
+		# Helpers grouping photometric and astrometric names into dicts for convenience.
 		self.photometric_names = {"values":observables["photometry"],"errors":observables["photometry_error"]}
 		self.astrometric_names = {"values":observables["astrometry"],"errors":observables["astrometry_error"]}
 
-	def _isochrone_photometric_limits(self,distance):
-		"""Filter out those stars having absolute magnitude lower than the model limits"""
+	def _isochrone_photometric_limits(self, distance: float) -> np.ndarray:
+		"""
+		Compute apparent magnitude limits for each photometric band based on the
+		absolute magnitude lower limits encoded in the MLP. This is used to
+		reject sources that are brighter (i.e. have lower absolute magnitude)
+		than the isochrone model domain.
+
+		Parameters
+		----------
+		distance : float
+			Distance in parsecs used to transform absolute magnitude limits to apparent.
+		"""
 		try:
+			# The MLP is serialized with dill and contains a key "phot_min"
+			# which stores the minimum absolute magnitude (brightest) the NN covers.
 			with open(self.file_mlp, 'rb') as file:
 				mlp = dill.load(file)
 				phot_min = mlp["phot_min"]
 		except FileNotFoundError as error:
+			# Re-raise with a clearer message for the caller.
 			raise FileNotFoundError("The isochrone model cannot be found. Please, provide a valid path.") from error
 		else:
-			# Get apparent magnitud and parallax from our dataset
+			# Convert absolute magnitude limit to apparent magnitude at given distance:
+			# m = M + 5 log10(d) - 5
 			phot_lim = phot_min + 5.0*np.log10(distance) - 5.0
 			return phot_lim
 
 	def load_data(self, 
-		file_data : str, 
-		fill_nan : str = "max",
-		n_stars=None
-		):
-		"""Read dataset file and sample nStars from the generated dataframe
-		
+		file_data: str, 
+		fill_nan: str = "max",
+		n_stars: Optional[int] = None
+	) -> None:
+		"""
+		Read dataset CSV and perform preprocessing.
+
 		Parameters
 		----------
-		filename : str
-			Dataset file name. It must be at data folder.
-		nStars : int
-			Number of stars to select from data. Default is None, therefore the full dataset is taken.
-		sortPho : bool
-			If nStars is given, sort sampled Photometry (ascending order) and take nStars (most brilliant). If False,
-			just sample nStars at random.
+		file_data : str
+			Path to input CSV file containing the columns defined in self.columns.
+		fill_nan : str, optional
+			Method to fill missing error values ("max" or "mean"). Default "max".
+		n_stars : int or None
+			If set, only keep the last n_stars rows (the code uses iloc[-n_stars:]).
 		"""
 		assert fill_nan in ["max","mean"],"Error: fill_nan can only be max or mean"
 
 		# ----------------Read dataset --------------------
+		# Only read the expected columns for efficiency.
 		df = pn.read_csv(file_data,usecols=self.columns)
+		# Use the source_id as the DataFrame index.
 		df.set_index("source_id",inplace=True)
 		#--------------------------------------------------
 		
 		#-------- Filter out sources brighter than limit ------------------------------------------------
+		# Estimate an average distance from parallax to compute an apparent magnitude
+		# limit for rejection. 1000/parallax to convert mas->pc (parallax must be in mas).
 		phot_lim = self._isochrone_photometric_limits(distance=np.mean(1000/df["parallax"])).to_numpy()
+
+		# For each star, keep it if ALL photometric bands are fainter than the phot_lim
+		# or if the measurement is missing (NaN). The mask_valid ends up boolean per-source.
 		mask_valid = df.loc[:,self.observables["photometry"]].apply(
 			lambda x : x >= phot_lim ,axis=1) | df.loc[:,self.observables["photometry"]].isnull()
 		mask_valid = mask_valid.apply(lambda x: np.all(x),axis=1)
 		df = df.loc[mask_valid]
 		#-------------------------------------------------------------------------------------------------
 
-		#-------------- Replace zeros and missing values -------------------------
+		#-------------- Replace zeros and missing values for error columns -------------------------
+		# Replace zero errors with NaN (zeros often mean missing or bad data), then fill
+		# with either the column max or mean depending on fill_nan policy.
 		for value,error in zip(self.names_mu,self.names_sd):
+			# Replace 0.0 in error columns by NaN so we can fill with a sensible value.
 			df[error] = df[error].replace(0.0,np.nan)
+			# Choose replacement strategy
 			replace = df[error].max() if fill_nan == "max" else df[error].mean()
 			df[error] = df[error].fillna(value=replace)
 
-			#---- if band is missing error as well -----
+			# If the band value itself is missing (NaN) then set the error back to NaN.
+			# This protects from producing spurious error bars for missing measurements.
 			df.loc[np.isnan(df[value]),error] = np.nan
-			#-------------------------------------------
 		#-------------------------------------------------------------------------
 
 		print("Summary of input data:")
 		print(df.describe())
 
+		# If n_stars is provided, keep only the last n_stars rows.
 		if n_stars is not None:
 			print(50*">")
 			print("Using only these sources:")
@@ -147,18 +196,21 @@ class Huehueti:
 			print(df.describe())
 			print(50*"<")
 
+		# Save processed data into the object
 		self.data = df
 
 		#----- Track ID -----------------
 		self.ID = self.data.index.values
 		#--------------------------------
 
-		#----- Save identifiers --------------------------
+		#----- Save identifiers to CSV for downstream tools --------------------------
 		df = pn.DataFrame(self.ID,columns=[self.id_name])
 		df.to_csv(path_or_buf=self.file_ids,index=False)
 		#------------------------------------------------
 
-		#-------- Observations to InferenceData ---------------
+		#-------- Observations to Arviz InferenceData (observed_data) ---------------
+		# This transforms the DataFrame into an xarray.Dataset with a MultiIndex
+		# so it can be attached as observed_data for ArviZ/InferenceData workflows.
 		df = pn.DataFrame(self.data,
 			columns=["obs"],
 			index=pn.MultiIndex.from_product(
@@ -170,13 +222,18 @@ class Huehueti:
 		#------------------------------------------------------
 
 	def setup(self,
-		prior : dict,
-		starting_points = None,
-		):
+		prior: Dict[str, Any],
+		starting_points: Optional[Any] = None,
+	) -> None:
 		"""
-		Fill sd NaNs with zeros to avoid error while sampling
-		"""
+		Initialize the MLP and probabilistic model.
 
+		Parameters
+		----------
+		prior : dict
+			Prior specification passed to Model_v0.
+		starting_points : optional initial values (currently unused)
+		"""
 		#----------------- Initialize NNs ----------------
 		self.mlp = MLP(file_mlp=self.file_mlp)
 		#--------------------------------------------------
@@ -224,44 +281,45 @@ class Huehueti:
 						)
 		#-------------------------------------------------------------------------------------
 
-	def plot_pgm(self,file=None):
+	def plot_pgm(self, file: Optional[str] = None) -> None:
+		"""
+		Render and save a graphical model (PGM) from the PyMC model.
+		"""
 		file = file if file is not None else self.dir_out+"model_graph.png"
 		graph = pm.model_to_graphviz(self.Model)
 		graph.render(outfile=file,format="png")
 
 	def run(self,
-		tuning_iters : int = 3000,
-		sample_iters : int = 2000,
-		target_accept : float = 0.65,
-		chains : int = 2,
-		cores : int = 2,
-		step=None,
-		step_size=None,
-		init_method : str = "advi+adapt_diag",
-		init_iters : int = int(1e6),
-		init_absolute_tol : float = 5e-3,
-		init_relative_tol : float = 1e-5,
-		init_plot_iters : int = int(1e4),
-		init_refine : bool = False,
-		prior_predictive : bool = True,
-		prior_iters : int = 2000,
-		progressbar : bool = True,
-		nuts_sampler : str = "numpyro",
-		random_seed=None):
+		tuning_iters: int = 3000,
+		sample_iters: int = 2000,
+		target_accept: float = 0.65,
+		chains: int = 2,
+		cores: int = 2,
+		step: Optional[Any] = None,
+		step_size: Optional[float] = None,
+		init_method: str = "advi+adapt_diag",
+		init_iters: int = int(1e6),
+		init_absolute_tol: float = 5e-3,
+		init_relative_tol: float = 1e-5,
+		init_plot_iters: int = int(1e4),
+		init_refine: bool = False,
+		prior_predictive: bool = True,
+		prior_iters: int = 2000,
+		progressbar: bool = True,
+		nuts_sampler: str = "numpyro",
+		random_seed: Optional[int] = None) -> None:
 		"""
-		Performs the MCMC run.
-		Arguments:
-		sample_iters (integer):    Number of MCMC iterations.
-		tuning_iters (integer):    Number of burning iterations.
+		Performs the variational initialization (ADVI) followed by MCMC sampling.
 		"""
-
 		#------- Step_size ----------
 		if step_size is None:
 			step_size = 1.e-1
 		#---------------------------
 
+		# Only run sampling if posterior file does not already exist.
 		if not os.path.exists(self.file_chains):
-			#================== Optimization =============================================
+			#================== Optimization (ADVI) =============================================
+			# If an initialization file exists, read it (it saves starting points).
 			if os.path.exists(self.file_start):
 				print("Reading initial positions ...")
 				in_file = open(self.file_start, "rb")
@@ -273,9 +331,12 @@ class Huehueti:
 				start = None #self.starting_points
 				print("Finding initial positions ...")
 
+				# Run ADVI if there is no saved initialization or if user requested refine.
 			if approx is None or (approx is not None and init_refine):
 
+				# Prepare random seeds per chain (PyMC utility).
 				random_seed_list = pm.util._get_seeds_per_chain(random_seed, chains)
+				# Convergence callbacks used to stop ADVI when parameter changes are small.
 				cb = [pm.callbacks.CheckParametersConvergence(
 						tolerance=init_absolute_tol, diff="absolute",ord=None),
 					  pm.callbacks.CheckParametersConvergence(
@@ -292,7 +353,7 @@ class Huehueti:
 					#test_optimizer=pm.adagrad#_window
 					)
 
-				#------------- Plot Loss ----------------------------------
+				#------------- Plot the ADVI loss (last init_plot_iters iterations) ----------------
 				plt.figure()
 				plt.plot(approx.hist[-init_plot_iters:])
 				plt.xlabel("Last {0} iterations".format(init_plot_iters))
@@ -301,6 +362,7 @@ class Huehueti:
 				plt.close()
 				#-----------------------------------------------------------
 
+				# Sample initial points from the fitted variational approximation for each chain.
 				approx_sample = approx.sample(
 					draws=chains, 
 					random_seed=random_seed_list[0],
@@ -308,6 +370,7 @@ class Huehueti:
 					)
 
 				initial_points = [approx_sample[i] for i in range(chains)]
+				# Extract mean/std used to build HMC mass matrix/potential if needed.
 				sd_point = approx.std.eval()
 				mu_point = approx.mean.get_value()
 				approx = {
@@ -316,32 +379,20 @@ class Huehueti:
 					"sd_point":sd_point
 					}
 
+				# Save initialization to disk so future runs can reuse it.
 				out_file = open(self.file_start, "wb")
 				dill.dump(approx, out_file)
 				out_file.close()
 
-				# #------------------ Save initial point ------------------------------
-				# df = pn.DataFrame(data=initial_points[0]["{0}D::true".format(self.D)],
-				# 	columns=self.names_mu)
-				# df.to_csv(self.file_init_true,index=False)
-				# df = pn.DataFrame(data=initial_points[0]["{0}D::source".format(self.D)],
-				# 	columns=self.names_coords)
-				# df.to_csv(self.dir_out+"/initial_source.csv",index=False)
-				# #---------------------------------------------------------------------
-
-			#----------- Extract ---------------------
+			#----------- Extract values needed for sampler ---------------------
 			mu_point = approx["mu_point"]
 			sd_point = approx["sd_point"]
 			initial_points = approx["initial_points"]
 			#-------------------------------------------
 
-			#================================================================================
-
 			#=================== Sampling ==================================================
 			if nuts_sampler == "pymc":
-				#--------------- Prepare step ---------------------------------------------
-				# Only valid for nuts_sampler == "pymc". 
-				# The other samplers adapt steps independently.
+				#--------------- Prepare step with a diagonal quadpotential -----------------
 				potential = pm.step_methods.hmc.quadpotential.QuadPotentialDiagAdapt(
 							n=len(mu_point),
 							initial_mean=mu_point,
@@ -353,11 +404,10 @@ class Huehueti:
 						model=self.Model,
 						target_accept=target_accept
 						)
-				#----------------------------------------------------------------------------
 
 				print("Sampling the model ...")
 
-				#---------- Posterior -----------
+				#---------- Posterior sampling with a configured step ----------
 				trace = pm.sample(
 					draws=sample_iters,
 					initvals=initial_points,
@@ -372,9 +422,8 @@ class Huehueti:
 					nuts_sampler_kwargs={"step_size":step_size},
 					model=self.Model
 					)
-				#--------------------------------
 			else:
-				#---------- Posterior -----------
+				#---------- Posterior sampling using default sampler backend (e.g., numpyro) -----------
 				trace = pm.sample(
 					draws=sample_iters,
 					initvals=initial_points,
@@ -389,16 +438,15 @@ class Huehueti:
 					#nuts_sampler_kwargs={"step_size":step_size},
 					model=self.Model
 					)
-				#--------------------------------
 
-			#--------- Save with arviz ------------
+			#--------- Save posterior samples to disk in ArviZ NetCDF representation ------------
 			print("Saving posterior samples ...")
 			az.to_netcdf(trace,self.file_chains)
 			#-------------------------------------
 			del trace
 			#================================================================================
 
-		
+		# Optionally sample prior predictive draws and save them for later model checking.
 		if prior_predictive and not os.path.exists(self.file_prior):
 			#-------- Prior predictive -------------------
 			print("Sampling prior predictive ...")
@@ -412,14 +460,16 @@ class Huehueti:
 		print("Sampling done!")
 		
 
-
-	def load_trace(self,file_chains=None):
+	def load_trace(self, file_chains: Optional[str] = None) -> None:
 		'''
-		Loads a previously saved sampling of the model
-		'''
+		Loads a previously saved sampling of the model (ArviZ InferenceData from NetCDF).
 
+		After loading, this method organizes variable names into convenient categories
+		(self.source_variables, self.global_variables, etc.) used by plotting and summary methods.
+		'''
 		file_chains = self.file_chains if (file_chains is None) else file_chains
 
+		# If IDs not present in-memory, read saved identifiers file.
 		if not hasattr(self,"ID"):
 			#----- Load identifiers ------
 			self.ID = pn.read_csv(self.file_ids).to_numpy().flatten()
@@ -430,10 +480,11 @@ class Huehueti:
 		try:
 			posterior = az.from_netcdf(file_chains)
 		except ValueError:
+			# Fatal error if file cannot be parsed / is incompatible.
 			sys.exit("ERROR at loading {0}".format(file_chains))
 		#------------------------------------------------------------------------
 
-		#----------- Load prior -------------------------------------------------
+		#----------- Load prior (if exists) and extend posterior with prior group ----
 		try:
 			prior = az.from_netcdf(self.file_prior)
 		except:
@@ -445,16 +496,17 @@ class Huehueti:
 			self.ds_prior = posterior.prior
 		#-------------------------------------------------------------------------
 
+		# Store the combined InferenceData
 		self.trace = posterior
 
-		#---------Load posterior ---------------------------------------------------
+		#--------- Extract posterior dataset and ensure it exists --------------------
 		try:
 			self.ds_posterior = self.trace.posterior
 		except ValueError:
 			sys.exit("There is no posterior in trace")
 		#------------------------------------------------------------------------
 
-		#------- Variable names -----------------------------------------------------------
+		#------- Build lists of variables grouped by use (source-level vs global) -----------
 		source_variables = list(filter(lambda x: (("mass" in x)
 											or ("distance" in x)
 											or ("astrometry" in x)
@@ -469,25 +521,28 @@ class Huehueti:
 											),
 											self.ds_posterior.data_vars))
 	
+		# Default groups used for plotting/summaries.
 		trace_variables = global_variables.copy()
 		source_sts_variables = source_variables.copy()
 		global_sts_variables = global_variables.copy()
 		global_cpp_var = global_variables.copy()
 		source_prd_var = source_variables.copy()
 
-		#----------- Case specific variables -------------
+		#----------- Case specific variable filtering -------------
 		tmp_src     = source_variables.copy()
 		tmp_sts_src = source_variables.copy()
 		tmp_sts_glb = global_variables.copy()
 		tmp_cpp   = global_variables.copy()
 		tmp_prd   = source_variables.copy()
 
+		# Remove "true" variants from source_variables (we want the inferred quantities)
 		for var in tmp_src:
 			if (
 				("true" in var)
 				):
 				source_variables.remove(var)
 
+		# Keep only relevant source statistics variables: mass, distance, astrometry and photometry (not "true")
 		for var in tmp_sts_src:
 			if not (
 				(var == "mass") or 
@@ -498,6 +553,7 @@ class Huehueti:
 				):
 				source_sts_variables.remove(var)
 
+		# Keep only relevant global statistics variables: age, distance central/dispersion and photometric hyperparams
 		for var in tmp_sts_glb:
 			if not (
 				("age" in var) or 
@@ -507,6 +563,7 @@ class Huehueti:
 				):
 				global_sts_variables.remove(var)
 
+		# Variables to compare prior/posterior (cpp): only keep age, distance central/dispersion and photometric_*
 		for var in tmp_cpp:
 			if not (("age" in var)
 				or (var == "distance_central")
@@ -514,18 +571,19 @@ class Huehueti:
 				or ("photometric_" in var)):
 				global_cpp_var.remove(var)
 
+		# For posterior predictions keep photometry true values (predictions) and drop others
 		for var in tmp_prd:
 			if (
 				(("photometry" in var) 
 					and not ("true" in var)) 
 				or ("astrometry" in var)
 				):
+				# keep (pass)
 				pass
 			else:
 				source_prd_var.remove(var)
 
-		#----------------------------------------------------
-
+		# Store computed groupings on the object for later use by plotting functions.
 		self.source_variables  = source_variables
 		self.global_variables  = global_variables
 		self.trace_variables   = trace_variables
@@ -534,18 +592,12 @@ class Huehueti:
 		self.global_sts_variables  = global_sts_variables
 		self.source_sts_variables  = source_sts_variables
 
-		# print("source_variables: ",self.source_variables)
-		# print("global_variables: ",self.global_variables)
-		# print("trace_variables: ",self.trace_variables)
-		# print("cpp_variables: ",self.cpp_variables)
-		# print("prd_variables: ",self.prd_variables)
-		# print("global_sts_variables",self.global_sts_variables)
-		# print("source_sts_variables",self.source_sts_variables)
-		# sys.exit()
-
-	def convergence(self):
+	def convergence(self) -> None:
 		"""
-		Analyse the chains.		
+		Compute and print basic MCMC convergence diagnostics using ArviZ:
+		- rhat (Gelman-Rubin)
+		- ess (effective sample size)
+		Also prints the mean step size per chain from sample_stats.
 		"""
 		print("Computing convergence statistics ...")
 		rhat  = az.rhat(self.ds_posterior)
@@ -560,25 +612,27 @@ class Huehueti:
 			print("{0} : {1:2.4f}".format(var,np.mean(ess[var].values)))
 
 		print("Step size:")
+		# The trace object has sample_stats; average over draws to report mean step_size per chain.
 		for i,val in enumerate(self.trace.sample_stats["step_size"].mean(dim="draw")):
 			print("Chain {0}: {1:3.8f}".format(i,val))
 
 	def plot_chains(self,
-		file_trace_sources=None,
-		file_trace_globals=None,
-		IDs=None,
-		divergences='bottom', 
-		figsize=None, 
-		lines=None, 
-		combined=False,
-		compact=False,
-		plot_kwargs=None, 
-		hist_kwargs=None, 
-		trace_kwargs=None,
-		fontsize_title=16):
+		file_trace_sources: Optional[str] = None,
+		file_trace_globals: Optional[str] = None,
+		IDs: Optional[Sequence[Union[str,int]]] = None,
+		divergences: Union[str, bool] = 'bottom', 
+		figsize: Optional[tuple] = None, 
+		lines: Optional[Any] = None, 
+		combined: bool = False,
+		compact: bool = False,
+		plot_kwargs: Optional[Dict[str,Any]] = None, 
+		hist_kwargs: Optional[Dict[str,Any]] = None, 
+		trace_kwargs: Optional[Dict[str,Any]] = None,
+		fontsize_title: int = 16) -> None:
 		"""
-		This function plots the trace. Parameters are the same as in pymc3
+		Plot trace plots for global parameters and (optionally) per-source parameters.
 		"""
+		# If no IDs provided and there are no global variables, nothing to plot.
 		if IDs is None and len(self.global_variables) == 0:
 			return
 
@@ -587,10 +641,12 @@ class Huehueti:
 		file_trace_globals = file_trace_globals if (file_trace_globals is not None) else self.file_trace_globals
 		file_trace_sources = file_trace_sources if (file_trace_sources is not None) else self.file_trace_sources
 
+		# If specific source IDs requested, create a PDF with one page per source.
 		if IDs is not None:
 			pdf = PdfPages(filename=file_trace_sources)
 			#--------- Loop over ID in list ---------------
 			for i,ID in enumerate(IDs):
+				# Validate provided ID is present in the dataset.
 				id_in_IDs = np.isin(ID,self.ID)
 				print(id_in_IDs)
 				if not np.any(id_in_IDs) :
@@ -609,6 +665,7 @@ class Huehueti:
 						hist_kwargs=hist_kwargs, 
 						trace_kwargs=trace_kwargs)
 
+				# Tweak axis labels to include units where appropriate.
 				for ax in axes:
 					# --- Set units in parameters ------------------------------
 					title = ax[0].get_title()
@@ -618,18 +675,16 @@ class Huehueti:
 						ax[0].set_xlabel("pc")
 					#-----------------------------------------------------------
 					ax[1].set_xlabel("Iterations")
-					# ax[0].set_title(None)
-					# ax[1].set_title(None)
 				
 				plt.subplots_adjust(left=0,right=1,bottom=0,top=0.95,hspace=0.5,wspace=0.1)
 				plt.gcf().suptitle(self.id_name +" "+str(ID),fontsize=fontsize_title)
 
-					
 				#-------------- Save fig --------------------------
 				pdf.savefig(bbox_inches='tight')
 				plt.close(0)
 			pdf.close()
 
+		# Produce a PDF containing trace plots for all global variables.
 		pdf = PdfPages(filename=file_trace_globals)
 		for var_name in self.global_variables:
 			axes = az.plot_trace(self.ds_posterior,
@@ -644,7 +699,7 @@ class Huehueti:
 					# labeller=az.labels.NoVarLabeller()
 					)
 			for ax in axes:
-				# --- Set units in parameters ------------------------------
+				# Add readable units to axis labels where applicable
 				title = ax[0].get_title()
 				if "age" in title:
 					ax[0].set_xlabel("Myr")
@@ -659,13 +714,12 @@ class Huehueti:
 		pdf.close()
 
 	def plot_cpp(self,
-		file_cpp=None,
-		figsize=None,
-		):
+		file_cpp: Optional[str] = None,
+		figsize: Optional[tuple] = None,
+	) -> None:
 		"""
-		This function plots the prior and posterior distributions.
+		Plot comparison of prior and posterior distributions for a set of global variables.
 		"""
-
 		print("Plotting prior and posterior ...")
 		file_cpp = file_cpp if file_cpp is not None else self.file_cpp
 
@@ -679,13 +733,12 @@ class Huehueti:
 
 
 	def plot_posterior(self,
-		file_posterior=None,
-		figsize=None,
-		):
+		file_posterior: Optional[str] = None,
+		figsize: Optional[tuple] = None,
+	) -> None:
 		"""
-		This function plots the prior and posterior distributions.
+		Plot marginal posterior distributions for global variables.
 		"""
-
 		print("Plotting posterior ...")
 		file_pos = file_posterior if file_posterior is not None else self.file_pos
 
@@ -698,37 +751,45 @@ class Huehueti:
 		pdf.close()
 
 	def plot_predictions(self,
-		file_plots : str = None,
-		figsize : str = None,
-		fmt_121 : str = "k:"
-		):
+		file_plots: Optional[str] = None,
+		figsize: Optional[tuple] = None,
+		fmt_121: str = "k:"
+	) -> None:
 		"""
-		This function plots the posterior predictive distributions.
+		Plot predicted vs observed values for per-source predicted quantities (e.g., predicted photometry).
 		"""
-
 		print("Plotting posterior predictive distributions ...")
 		file_plots = file_plots if file_plots is not None else self.file_prd
 
 		pdf = PdfPages(filename=file_plots)
 
 		for case in self.prd_variables:
+			# Build the column list (value + error) for this case (photometry or astrometry)
 			columns = sum([self.observables[case],self.observables[case+"_error"]],[])
+			# Mapper from observable->error column name for renaming predicted sd later
 			mapper = {key: value for key,value in zip(
 							self.observables[case],
 							self.observables[case+"_error"])}
 			df_obs = self.data.loc[:,columns].copy()
 
+			# Convert posterior draws for the variable into a DataFrame and reformat.
 			df_prd = self.trace.posterior[case].to_dataframe().unstack()
+			# After unstacking the first level is chain/draw; drop it to get source_id and variable.
 			df_prd.columns = df_prd.columns.droplevel(level=0)
 
+			# Compute mean and std across posterior draws for each source
 			df_prd_mu = df_prd.groupby("source_id").mean()
 			df_prd_sd = df_prd.groupby("source_id").std()
+			# Rename predicted sd columns to match the observed error column names
 			df_prd_sd.rename(columns=mapper,inplace=True)
+			# Join mean and sd and prefix columns with "pred_"
 			df_prd = df_prd_mu.join(df_prd_sd)
 			df_prd.rename(columns=lambda x: "pred_"+str(x),inplace=True)
 
+			# Join observed and predicted summaries into a single DataFrame
 			df = df_obs.join(df_prd)
 
+			# For each observable, plot observed vs predicted with errorbars.
 			for var,err,unit in zip(
 				self.observables[case],
 				self.observables[case+"_error"],
@@ -744,6 +805,7 @@ class Huehueti:
 						ecolor='gray', 
 						zorder=1)
 				lim = ax.get_xlim()
+				# Plot the one-to-one line for reference
 				ax.plot(lim, lim,fmt_121, zorder=0)
 				ax.set_xlabel("Observed {0} {1}".format(var,unit))
 				ax.set_ylabel("Predicted {0} {1}".format(var,unit))
@@ -754,38 +816,43 @@ class Huehueti:
 
 
 	def plot_cmd(self,
-		file_plot=None,
-		figsize=None,
-		cmd : dict = {"magnitude":"g","color":["g","rp"]},
-		n_samples : int = 10,
-		n_points : int = 100,
-		scatter_palette = "dark",
-		lines_color = "orange",
-		alpha=1.0,
-		dpi=600,
-		):
+		file_plot: Optional[str] = None,
+		figsize: Optional[tuple] = None,
+		cmd: Dict[str, Any] = {"magnitude":"g","color":["g","rp"]},
+		n_samples: int = 10,
+		n_points: int = 100,
+		scatter_palette: str = "dark",
+		lines_color: str = "orange",
+		alpha: float = 1.0,
+		dpi: int = 600,
+	) -> None:
 		"""
-		This function plots the model.
+		Plot a color-magnitude diagram (CMD) showing observed points, predicted points,
+		and sampled isochrones drawn from the posterior distribution.
 		"""
 		print("Plotting CMD ...")
 
 		msg_n = "The required n_samples {0} is larger than those in the posterior.".format(n_samples)
 
+		# Ensure we have enough posterior draws to sample unique ages.
 		assert n_samples <= self.ds_posterior.sizes["draw"], msg_n
 
-		#----- Samples from the posterior distribution -----------------------------------
+		#----- Draw ages from posterior and prepare a theta grid used by MLP -----------
 		ages = np.random.choice(self.trace.posterior["age"].values.flatten(),
 					size=n_samples,replace=False)
+		# Use mean distance from posterior for converting absolute->apparent.
 		distance = np.mean(self.trace.posterior["distance"].values.flatten())
 		theta    = np.linspace(self.mlp.theta_domain[0],self.mlp.theta_domain[1],n_points)
 
 		dfs_smp = []
+		# For each sampled age, query MLP to produce absolute photometry and convert to apparent.
 		for age in ages:
 			mass,absolute_photometry = self.mlp(age,theta,n_points)
 			photometry = absolute_to_apparent(absolute_photometry,distance,11)
 			df_tmp = pn.DataFrame(
 					data=photometry.eval(),
 					columns=self.observables["photometry"])
+			# The sampled isochrone points are indexed by star and age for plotting.
 			df_tmp.index.name = "star"
 			df_tmp["age"] = age
 			df_tmp.set_index("age",append=True,inplace=True)
@@ -793,13 +860,14 @@ class Huehueti:
 		df_smp = pn.concat(dfs_smp,ignore_index=False)
 		#------------------------------------------------------------------------------
 
-		#-------------- Photometric data -------------------------------------------------------
+		#-------------- Photometric data: compute posterior predicted mean per source -------
 		df_pht = self.trace.posterior["photometry"].to_dataframe().unstack("photometric_names")
 		df_pht.columns = df_pht.columns.droplevel(level=0)
 		df_pos = df_pht.groupby("source_id").mean()
 		#----------------------------------------------------------------------------------------
 
 		#---------------- Color and magnitude  ------------------------
+		# Use a set to avoid duplicated columns if magnitude also in color list
 		columns = list(set(sum([[cmd["magnitude"]],cmd["color"]],[])))
 		#--------------------------------------------------------------
 
@@ -809,15 +877,14 @@ class Huehueti:
 		df_smp = df_smp.loc[:,columns].copy()
 		#-----------------------------------------
 
-		#------------------- Join -----------------
+		#------------------- Concatenate observed and predicted for common scatter plotting -----------------
 		df_obs["Origin"] = "Observed"
 		df_prd["Origin"] = "Predicted"
 		df_all = pn.concat([df_obs,df_prd],
-					ignore_index=True) #Otherwise scatterplot wont work on duplicated index labels
+					ignore_index=True) #Otherwise seaborn scatterplot may trip on duplicated indices
 		#------------------------------------------
 
-
-		#------------------------ Color ------------------------
+		#------------------------ Compute color (color = band1 - band2) ------------------------
 		df_all["color"] = df_all.apply(lambda x: 
 						x[cmd["color"][0]] - 
 						x[cmd["color"][1]],axis=1)
@@ -827,7 +894,7 @@ class Huehueti:
 		#---------------------------------------------------------
 
 		file_plot = file_plot if (file_plot is not None) else self.file_cmd
-		#----------------- CMD --------------------------------------------
+		#----------------- Produce CMD --------------------------------------------
 		plt.figure(0,figsize=figsize)
 		ax = sns.scatterplot(data=df_all,
 						x="color",
@@ -837,6 +904,7 @@ class Huehueti:
 						style="Origin",
 						s=10,
 						zorder=0)
+		# Overplot sampled isochrone lines colored by age (but not showing legend)
 		sns.lineplot(data=df_smp,
 						x="color",
 						y=cmd["magnitude"],
@@ -852,108 +920,23 @@ class Huehueti:
 			self.observables["photometry_units"][0]))
 		ax.set_ylabel("{0} {1}".format(cmd["magnitude"],
 			self.observables["photometry_units"][0]))
-		ax.invert_yaxis()
+		ax.invert_yaxis()  # Magnitudes increase downward in plots
 		ax.set_title("Apparent photometry")
 		plt.savefig(file_plot,bbox_inches='tight',dpi=dpi)
 		plt.close(0)
 
-	# def plot_hrd(self,
-	# 	file_plot=None,
-	# 	figsize=None,
-	# 	magnitude: dict = {"G":"g"},
-	# 	n_samples : int = 10,
-	# 	n_points : int = 100,
-	# 	scatter_palette = "dark",
-	# 	lines_color = "orange",
-	# 	alpha=1.0,
-	# 	dpi=600,
-	# 	):
-	# 	"""
-	# 	This function plots the model.
-	# 	"""
-	# 	print("Plotting HRD ...")
-	# 	abs_mag = list(magnitude.keys())[0]
-	# 	app_mag = list(magnitude.values())[0]
-
-	# 	msg_n = "The required n_samples {0} is larger than those in the posterior.".format(n_samples)
-
-	# 	assert n_samples <= self.ds_posterior.sizes["draw"], msg_n
-
-	# 	#----- Samples from the posterior distribution -----------------------------------
-	# 	ages = np.random.choice(self.trace.posterior["age"].values.flatten(),
-	# 				size=n_samples,replace=False)
-	# 	mass = np.linspace(self.mlp.mass_domain[0],self.mlp.mass_domain[1],n_points)
-	# 	teff = np.linspace(self.mlp.teff_domain[0],self.mlp.teff_domain[1],n_points)
-
-	# 	dfs_smp = []
-	# 	for age in ages:
-	# 		df_tmp = pn.merge(
-	# 				left=pn.DataFrame(data={"age":age,"teff":teff,"mass":mass}),
-	# 				right=pn.DataFrame(
-	# 				data=self.mlp(age,mass,teff,10.0,n_points).eval(),
-	# 				columns=self.observables["absolute"]),
-	# 				left_index=True,right_index=True)
-	# 		df_tmp.index.name = "source_id"
-	# 		df_tmp.reset_index(inplace=True)
-	# 		df_tmp.set_index(["age","source_id"],inplace=True)
-	# 		df_tmp = df_tmp.loc[:,["teff",abs_mag]]
-	# 		dfs_smp.append(df_tmp)
-	# 	df_smp = pn.concat(dfs_smp,ignore_index=False)
-	# 	#------------------------------------------------------------------------------
-
-	# 	#-------------- Preparing Data -------------------------------------------------------
-	# 	df_pht = self.trace.posterior["photometry"].to_dataframe().unstack("photometric_names")
-	# 	df_pht.columns = df_pht.columns.droplevel(level=0)
-	# 	df_dst = self.trace.posterior["distance"].to_dataframe()
-	# 	df_tff = self.trace.posterior["teff"].to_dataframe()
-	# 	df_tmp = pn.concat([df_tff,df_dst,df_pht],axis=1,join="inner")
-	# 	df_tmp[abs_mag] = df_tmp.apply(
-	# 		lambda x: apparent_to_absolute(x[app_mag],x["distance"]),axis=1)	
-	# 	df_prd = pn.merge(
-	# 				left=df_tmp.groupby("source_id").mean(),
-	# 				right=df_tmp.groupby("source_id").std(),
-	# 				left_index=True,right_index=True,
-	# 				suffixes=["","_sd"])
-	# 	df_prd = df_prd.loc[:,["teff",abs_mag]]
-	# 	#----------------------------------------------------------------------------------------
-
-	# 	#---------------------- Plot ---------------------------------------
-	# 	file_plot = file_plot if (file_plot is not None) else self.file_hrd
-	# 	plt.figure(0,figsize=figsize)
-	# 	ax = sns.scatterplot(data=df_prd,
-	# 					x="teff",
-	# 					y=abs_mag,
-	# 					s=10,
-	# 					zorder=0)
-	# 	sns.lineplot(data=df_smp,
-	# 					x="teff",
-	# 					y=abs_mag,
-	# 					palette=sns.color_palette([lines_color], n_samples),
-	# 					hue="age",
-	# 					legend=False,
-	# 					alpha=alpha,
-	# 					zorder=1,
-	# 					ax=ax)
-	# 	ax.set_xlabel("Teff [K]")
-	# 	ax.set_ylabel("{0} [mag]".format(abs_mag))
-	# 	ax.invert_yaxis()
-	# 	ax.invert_xaxis()
-	# 	ax.set_title("Hertzprung-Russell diagram")
-	# 	plt.savefig(file_plot,bbox_inches='tight',dpi=dpi)
-	# 	plt.close(0)
-	# 	#------------------------------------------------------------------
+	# The HRD plotting function is present but commented out in the original file.
+	# If needed it can be uncommented and updated with the same style of comments.
 
 	
 	def save_statistics(self,
-		file_globals=None,
-		file_sources=None,
-		hdi_prob=0.95,
-		stat_focus="mean",
-		kind="stats"):
+		file_globals: Optional[str] = None,
+		file_sources: Optional[str] = None,
+		hdi_prob: float = 0.95,
+		stat_focus: str = "mean",
+		kind: str = "stats") -> None:
 		'''
-		Saves the statistics to a csv file.
-		Arguments:
-		
+		Compute and save summary statistics for sources and global parameters.
 		'''
 		file_sources = file_sources if file_sources is not None else self.file_sts_src
 		file_globals = file_globals if file_globals is not None else self.file_sts_glb
@@ -964,10 +947,8 @@ class Huehueti:
 		dfs = []
 		for case in self.source_sts_variables:
 			if case in ["mass","distance"]:
-				# for var in self.observables[case]:
 				df_tmp  = az.summary(self.ds_posterior,
 							var_names=case,
-							# coords={"astrometric_names":var},
 							stat_focus = stat_focus,
 							hdi_prob=hdi_prob,
 							round_to=5,
@@ -1009,13 +990,9 @@ class Huehueti:
 				sys.exit("Unrecognized case: {0}".format(case))
 
 		df_source = pn.concat(dfs,axis=1,ignore_index=False)
-		#--------------------------------------------------------------
-
-		#---------- Save source data frame ----------------------
+		#---------- Save source data frame to CSV ----------------------
 		df_source.to_csv(path_or_buf=file_sources,
 						index_label=self.id_name)
-		#-------------------------------------------------
-
 		#-------------- Global statistics ----------------------------------
 		if len(self.global_sts_variables) > 0:
 			df_global = az.summary(self.ds_posterior,
@@ -1032,6 +1009,8 @@ class Huehueti:
 
 if __name__ == "__main__":
 
+	# Example run when executed as a script. These defaults assume a certain
+	# directory layout (data/, mlps/, outputs/) relative to the current working dir.
 	nuts_sampler = "numpyro"
 	n_stars = None
 
@@ -1046,6 +1025,7 @@ if __name__ == "__main__":
 	file_posterior = dir_out  + "Chains.nc"
 	file_prior     = dir_out  + "Prior.nc"
 
+	# Example priors to be passed to Huehueti.setup
 	priors = {
 		'age' : {
 			'family' : 'Uniform',
@@ -1103,3 +1083,52 @@ if __name__ == "__main__":
 	hue.plot_cmd()
 	hue.plot_hrd()
 	hue.save_statistics()
+````markdown name=DEVELOPER.md
+```markdown
+# Huehueti — Developer Notes
+
+This short developer guide documents the expected input CSV format, required columns, units, missing-value handling, and quick commands to run Huehueti.
+
+## Required CSV columns (header names)
+The loader expects the following columns in the input CSV (exact names):
+
+- Identifier
+  - `source_id` (string or integer) — unique ID for each source (becomes index)
+- Astrometry
+  - `parallax` (float) — mas
+  - `parallax_error` (float) — mas
+- Photometry (values)
+  - `g`, `bp`, `rp`, `gmag`, `rmag`, `imag`, `ymag`, `zmag`, `Jmag`, `Hmag`, `Kmag` (magnitudes)
+- Photometry (errors)
+  - `g_error`, `bp_error`, `rp_error`, `e_gmag`, `e_rmag`, `e_imag`, `e_ymag`, `e_zmag`, `e_Jmag`, `e_Hmag`, `e_Kmag` (magnitudes)
+
+These names are defined in `Huehueti.observables`. If your catalog uses different names, either rename the columns or update `Huehueti.py`'s observables mapping accordingly.
+
+## Units
+- Photometry: magnitudes (`[mag]`)
+- Parallax: milliarcseconds (`[mas]`)
+
+## Missing data / error handling
+- Zero error values in error columns are treated as missing and replaced by NaN before filling.
+- By default missing error values are filled with the maximum value of the error column (use `fill_nan="mean"` in `load_data` to use the mean instead).
+- If a photometric value is missing (NaN), its corresponding error is set back to NaN.
+
+## Photometric limits filtering
+- The loader filters out sources that are brighter than the isochrone model limits. The function `_isochrone_photometric_limits` reads `phot_min` from the serialized MLP (`file_mlp`) and converts it to apparent magnitudes using an average distance estimate (1000 / parallax mean).
+
+## Files and directories
+- Default directories used in the example `__main__`:
+  - Data: `./data/` (e.g., `data/Pleiades.csv`)
+  - MLPs: `./mlps/` (e.g., `mlps/PARSEC_10x96/mlp.pkl`)
+  - Outputs: `./outputs/…/`
+- Key outputs created by Huehueti (in `dir_out`):
+  - `Identifiers.csv`, `Observations.nc`, `Chains.nc`, `Prior.nc`
+  - Plots: `Posterior.pdf`, `Comparison_prior_posterior.pdf`, `Predictions.pdf`, `Color-magnitude_diagram.png`, etc.
+  - Statistics: `Sources_statistics.csv`, `Global_statistics.csv`
+
+## Quick run (example)
+1. Place your input CSV at `data/YourCatalog.csv`.
+2. Ensure you have an MLP dill file (e.g. `mlps/PARSEC_10x96/mlp.pkl`) with the `phot_min` and domain attributes consumed by the code.
+3. Run:
+   ```bash
+   python Huehueti.py

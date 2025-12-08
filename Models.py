@@ -1,3 +1,11 @@
+"""Probabilistic models used by Huehueti.
+
+This module defines Model_v0 (the baseline model) and Model_v1 (an extended model
+with spectroscopy / abundance support). Both classes subclass pymc.Model and
+compose observed data, prior distributions, latent variables, and likelihoods.
+The code relies on the MLP wrapper (mlp callable) to produce model-predicted
+absolute photometry as a function of age and a per-source parameter theta.
+"""
 import sys
 import numpy as np
 import pymc as pm
@@ -9,7 +17,13 @@ from Functions import absolute_to_apparent
 
 class Model_v0(Model):
 	"""
-	Baseline model.
+	Baseline model for photometry and parallax.
+
+	Key model pieces:
+	- Global parameters: age, distance_central, distance_dispersion, photometric_dispersion
+	- Per-source latent variables: theta (uniform prior), distance (Normal around central),
+	  derived astrometry (parallax) and deterministic predicted photometry (via MLP).
+	- Likelihoods: Normal for astrometry (parallax) and Normal for photometry.
 	"""
 	
 	def __init__(self,
@@ -25,13 +39,18 @@ class Model_v0(Model):
 		astrometric_names : list,
 		photometric_names : list
 		):
-		"""Input observed variables.
-		
-		Parameters
-		----------
-		data : pd.Dataframe
-			Dataframe containing observed parallax (parallax), photometry, and Li abundance.
+		"""Construct Model_v0.
+
+		Parameters (high level)
+		- mlp: callable MLP(age, theta, n_stars) -> (mass, absolute_photometry)
+		- prior: dict specifying priors for age, distance, dispersions, etc.
+		- identifiers: array of source IDs (used for coords/dims)
+		- astrometry_mu, astrometry_sd: observed astrometric values and errors
+		- astrometry_ix: indices of finite astrometric measurements (used to mask likelihood)
+		- photometry_mu, photometry_sd, photometry_ix: analogous for photometry
+		- astrometric_names, photometric_names: lists of observable names used to set coords
 		"""
+		# Initialize parent Model (name empty) and register coords for ArviZ/InferenceData
 		super().__init__(name="", model=None)
 		self.add_coord("source_id",values=identifiers)
 		self.add_coord("astrometric_names",values=astrometric_names)
@@ -40,7 +59,8 @@ class Model_v0(Model):
 		n_stars = len(identifiers)
 
 		#===================== Global parameters =====================================
-		#---------------------- Age ------------------------ 
+		#---------------------- Age ------------------------
+		# Age prior can be either TruncatedNormal or Uniform as provided by caller.
 		if prior["age"]["family"] == 'TruncatedNormal':
 			age = pm.TruncatedNormal('age',
 					mu = prior['age']['mu'],
@@ -57,6 +77,7 @@ class Model_v0(Model):
 		#-----------------------------------------------------
 
 		#--------------- Astrometry -----------------------------------
+		# distance_central is the cluster-level (global) distance prior
 		if prior['distance']['family'] == "Gaussian":
 			distance_central = pm.Normal('distance_central', 
 					mu = prior['distance']['mu'],
@@ -68,6 +89,7 @@ class Model_v0(Model):
 		else: 
 			raise KeyError('Unknown distance prior distribution')
 
+		# distance_dispersion controls the per-source scatter around central distance
 		if prior["distance_dispersion"]["family"] == 'Exponential':
 			distance_dispersion = pm.Exponential('distance_dispersion',
 									scale=prior["distance_dispersion"]["scale"])
@@ -79,7 +101,8 @@ class Model_v0(Model):
 			raise KeyError('Unknown astrometric_dispersion distribution')
 		#----------------------------------------------------------------------------
 
-		#--------------- Photometry ------------------------------------------------------
+		#--------------- Photometry hyper-parameters ------------------------------------------------------
+		# Photometric dispersion is a per-band parameter (dims="photometric_names")
 		if prior["photometric_dispersion"]["family"] == 'Exponential':
 			photometric_dispersion = pm.Exponential('photometric_dispersion',
 									scale=prior["photometric_dispersion"]["sigma"],
@@ -95,36 +118,43 @@ class Model_v0(Model):
 		#======================================================================================
 
 		#====================== Source parameters =======================================
-		#---------------- Theta-------------------------------------------------
+		# Theta: per-source parameter used as input to the MLP (domain typically in (0,1])
 		theta = pm.Uniform("theta",lower = 1e-5, upper = 1.0,dims="source_id")
 		#-----------------------------------------------------------------------
 		#================================================================================
 
 		#===================== True values =========================================
+		# Per-source distance drawn from the global distance_central and dispersion
 		distance = pm.Normal("distance",
 								mu=distance_central,sigma=distance_dispersion,
 								dims="source_id")
+		# Convert distance (pc) to parallax (mas) as a deterministic variable for comparison
 		astrometry = pm.Deterministic("astrometry",
 							var=pytensor.tensor.reshape(1000./distance,(n_stars,1)),
 							dims=("source_id","astrometric_names"))
 
 		#-------------- Neural Network -----------------------
+		# Use the provided MLP callable to predict mass and absolute photometry for each source.
 		mass,absolute_photometry = mlp(age,theta, n_stars)
 		#-----------------------------------------------------
 
+		# Expose mass as a deterministic per-source variable in the model
 		mass = pm.Deterministic('mass',mass,dims="source_id")
 		
+		# Convert absolute photometry to apparent magnitudes using per-source distance
 		photometry = pm.Deterministic('photometry',
 							absolute_to_apparent(absolute_photometry,distance,11),
 							dims=("source_id","photometric_names"))
 		#=================================================================================
 
 		#================== Addition of uncertainties ====================================
+		# Combine observed photometric uncertainties with model photometric dispersion
 		photometry_sigma = photometry_sd**2 + photometric_dispersion**2
 		#=================================================================================
 
 		#===================== Likelihood =============================
-		#- The true and observed are contracted to the not NaN values
+		# Use the provided index masks (astrometry_ix, photometry_ix) to restrict likelihood
+		# application only to measured (finite) entries.
 		#---------------- Parallax --------------------------
 		obs_astrometry = pm.Normal('obs_astrometry', 
 			mu=astrometry[astrometry_ix], 
@@ -142,7 +172,13 @@ class Model_v0(Model):
 
 class Model_v1(Model):
 	"""
-	Chronos baseline model for photometry and Lithium abundance.
+	Chronos baseline model for photometry and Lithium abundance (longer form).
+
+	This class is an extended/experimental model which supports:
+	- per-source Teff priors
+	- separate age variables for photometry and LDB (age_iso, age_ldb)
+	- mixture model for photometric outliers
+	- optional spectroscopy modeling (true_spectroscopy)
 	"""
 	
 	def __init__(self,
@@ -162,24 +198,25 @@ class Model_v1(Model):
 		photometric_names : list,
 		spectroscopic_names : list
 		):
-		"""Input observed variables.
-		
-		Parameters
-		----------
-		data : pd.Dataframe
-			Dataframe containing observed parallax (parallax), photometry, and Li abundance.
+		"""Construct Model_v1.
+
+		This initializer follows the same pattern as Model_v0 but includes more
+		components for spectroscopy and outlier handling. Many parts are optional
+		and guarded by the presence of corresponding observed arrays (e.g. spectroscopy_mu).
 		"""
 		super().__init__(name="", model=None)
 		self.add_coord("source_id",values=identifiers)
 		self.add_coord("photometric_names",values=photometric_names)
 		self.add_coord("spectroscopic_names",values=spectroscopic_names)
 
+		# determine which observation types are being used (None implies unused)
 		use_spectroscopy = spectroscopy_mu is not None
 		use_photometry = photometry_mu is not None
 		n_stars = len(identifiers)
 
 		#===================== Prior specification =====================================
 		#-------------------------- Teff --------------------------
+		# Teff can be a per-source Gaussian or Uniform prior depending on prior dict.
 		if prior["Teff"]['family'] == 'Gaussian':
 			tefs = pm.Normal("tefs", 
 					mu = prior["Teff"]['mu'],
@@ -214,7 +251,7 @@ class Model_v1(Model):
 				raise KeyError('Unknown age prior distribution')
 			#-----------------------------------------------------
 
-			#------------ Distance ----------------------------
+			#------------ Distance (per-source prior) ----------------------------
 			if prior['distance']['family'] == 'Gaussian':
 				distance = pm.Normal('distance', 
 						mu = prior['distance']['mu'],
@@ -231,7 +268,7 @@ class Model_v1(Model):
 				raise KeyError('Unknown distance prior distribution')
 			#---------------------------------------------------------
 
-			#-------------- Dispersion --------------------------------------
+			#-------------- Photometric dispersion hyperparameters --------------------------------------
 			if prior["photometric_dispersion"]["family"] == 'Exponential':
 				photometric_dispersion = pm.Exponential('photometric_dispersion',
 										scale=prior["photometric_dispersion"]["sigma"],
@@ -241,7 +278,7 @@ class Model_v1(Model):
 				raise KeyError('Unknown photometric_dispersion distribution')
 			#----------------------------------------------------------------
 
-			#------------- Outliers --------------------------------------------
+			#------------- Outlier modeling (mixture) --------------------------------------------
 			photometric_outliers_weights = pm.Dirichlet("photometric_outliers_weights",
 									a=prior["photometric_outliers"]["weights"])
 			photometric_outliers_mu = pm.Uniform("photometric_outliers_mu",
@@ -258,7 +295,7 @@ class Model_v1(Model):
 		
 		#---------------------- Spectroscopy--------------------------------------------
 		if use_spectroscopy:
-			#---------------------- Age ------------------------ 
+			# Age variable specific to LDB/spectroscopy modeling
 			if prior["age"]["family"] == 'Gaussian':
 				age_ldb = pm.TruncatedNormal('age_ldb',
 						mu = prior['age']['mu'],
@@ -272,39 +309,20 @@ class Model_v1(Model):
 						initval=prior["age"]["initval"])
 			else: 
 				raise KeyError('Unknown age prior distribution')
-			#-----------------------------------------------------
-
-			#---------------------- Dispersion -----------------------------------
-			# if prior["spectroscopic_dispersion"]["family"] == 'exponential':
-			# 	spectroscopic_dispersion = pm.Exponential('spectroscopic_dispersion',
-			# 						scale=prior["spectroscopic_dispersion"]["sigma"],
-			# 						dims="spectroscopic_names")
-			# else:
-			# 	raise KeyError('Unknown spectroscopic_dispersion distribution')
-			#----------------------------------------------------------------------
-
-			# #---------------------- Outliers -----------------------------------------------
-			# spectroscopic_outliers_weights = pm.Dirichlet("spectroscopic_outliers_weights",
-			# 							a=prior["spectroscopic_outliers"]["weights"])
-			# spectroscopic_outliers_mu = pm.Normal("spectroscopic_outliers_mu",
-			# 							mu=prior["spectroscopic_outliers"]["mu"],
-			# 							sigma=prior["spectroscopic_outliers"]["sigma"],
-			# 							dims="spectroscopic_names")
-			# spectroscopic_outliers_sd = pm.Gamma("spectroscopic_outliers_sd",
-			# 							alpha=2,
-			# 							beta=prior["spectroscopic_outliers"]["beta"],
-			# 							dims="spectroscopic_names")
-			# #-----------------------------------------------------------------------------
+			# Note: spectroscopic dispersion and outlier components are shown
+			# commented-out in the original code. They can be enabled if needed.
 		#------------------------------------------------------------------------------
 		#================================================================================
 
 		#===================== Transformations =========================================
 		#------------ True photometry --------------------------------
 		if use_photometry:
+			# Convert distance to parallax deterministically
 			parallax = pm.Deterministic('parallax', 
 								1000./distance,
 								dims="source_id")
 
+			# Compute true photometry via an mlp_iso function (must be provided)
 			true_photometry = pm.Deterministic('true_photometry',
 								mlp_iso(age_iso,tefs,distance,n_stars),
 								dims=("source_id","photometric_names"))
@@ -312,6 +330,7 @@ class Model_v1(Model):
 
 		#------------- True spectroscopy ---------------------
 		if use_spectroscopy:
+			# Compute true spectroscopic predictions using provided mlp_ldb callable
 			true_spectroscopy = pm.Deterministic("true_spectroscopy",
 								mlp_ldb(age_ldb,tefs,n_stars),
 								dims=("source_id","spectroscopic_names"))
@@ -319,7 +338,7 @@ class Model_v1(Model):
 		#=================================================================================
 
 		#================== Intrinsic dispersion & Outliers ================================
-		#----------------- Photometry ----------------------------
+		#----------------- Photometry mixture model ----------------------------
 		if use_photometry:
 			photometric_components = [
 				pm.Normal.dist(mu=true_photometry,
@@ -332,6 +351,7 @@ class Model_v1(Model):
 							comp_dists=photometric_components,
 							dims=("source_id","photometric_names"))
 
+			# Alternative (simple) photometry model (commented in original):
 			# photometry = pm.Normal("photometry",
 			# 					mu=true_photometry,
 			# 					sigma=photometric_dispersion,
@@ -339,27 +359,11 @@ class Model_v1(Model):
 		#------------------------------------------------------------
 
 		#------------------- Spectroscopy -----------------------------
-		# if use_spectroscopy:
-			# spectroscopic_components = [
-			# 	pm.Normal.dist(mu=true_spectroscopy,
-			# 				sigma=spectroscopic_dispersion),
-			# 	pm.Normal.dist(mu=spectroscopic_outliers_mu, 
-			# 				sigma=spectroscopic_outliers_sd)
-			# 	]
-
-			# spectroscopy = pm.Mixture("spectroscopy",
-			# 				w=spectroscopic_outliers_weights,
-			# 				comp_dists=spectroscopic_components, 
-			# 				dims=("source_id","spectroscopic_names"))
-			# spectroscopy = pm.Normal("spectroscopy",
-			# 				mu=true_spectroscopy,
-			# 				sigma=spectroscopic_dispersion,
-			# 				dims=("source_id","spectroscopic_names"))
-		#-------------------------------------------------------------
+		# (spectroscopy model is commented out in the original code)
 		#=================================================================================
 
 		#===================== Likelihood =============================
-		#- The true and observed are contracted to the not NaN values
+		# Apply the observation likelihoods only to measured entries using the provided masks.
 		if use_photometry:
 			#---------------- Parallax --------------------------
 			obs_parallax = pm.Normal('obs_parallax', 
@@ -376,7 +380,7 @@ class Model_v1(Model):
 			#-----------------------------------------------------
 
 		if use_spectroscopy:
-			#------------- Lithium likelihood ------------------
+			#------------- Spectroscopic likelihood (e.g., Lithium) ------------------
 			obs_spectroscopy = pm.Normal('obs_spectroscopy', 
 				mu=true_spectroscopy[spectroscopy_ix], 
 				sigma=spectroscopy_sd[spectroscopy_ix],

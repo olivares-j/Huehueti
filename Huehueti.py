@@ -1015,12 +1015,12 @@ if __name__ == "__main__":
 	n_stars = None
 
 	dir_data = os.getcwd() + "/data/"
-	dir_out  = os.getcwd() + "/outputs/PARSEC_v0_test_8/"
+	dir_out  = os.getcwd() + "/outputs/PARSEC_v0_test_7/"
 	dir_mlps = os.getcwd() + "/mlps/"
 
 	os.makedirs(dir_out,exist_ok=True)
 
-	file_data      = dir_data + "Pleiades.csv"
+	file_data      = dir_data + "Pleiades_test.csv"
 	file_mlp       = dir_mlps + "PARSEC_10x96/mlp.pkl"
 	file_posterior = dir_out  + "Chains.nc"
 	file_prior     = dir_out  + "Prior.nc"
@@ -1081,54 +1081,5 @@ if __name__ == "__main__":
 	hue.plot_cpp()
 	hue.plot_predictions()
 	hue.plot_cmd()
-	hue.plot_hrd()
+	# hue.plot_hrd()
 	hue.save_statistics()
-````markdown name=DEVELOPER.md
-```markdown
-# Huehueti — Developer Notes
-
-This short developer guide documents the expected input CSV format, required columns, units, missing-value handling, and quick commands to run Huehueti.
-
-## Required CSV columns (header names)
-The loader expects the following columns in the input CSV (exact names):
-
-- Identifier
-  - `source_id` (string or integer) — unique ID for each source (becomes index)
-- Astrometry
-  - `parallax` (float) — mas
-  - `parallax_error` (float) — mas
-- Photometry (values)
-  - `g`, `bp`, `rp`, `gmag`, `rmag`, `imag`, `ymag`, `zmag`, `Jmag`, `Hmag`, `Kmag` (magnitudes)
-- Photometry (errors)
-  - `g_error`, `bp_error`, `rp_error`, `e_gmag`, `e_rmag`, `e_imag`, `e_ymag`, `e_zmag`, `e_Jmag`, `e_Hmag`, `e_Kmag` (magnitudes)
-
-These names are defined in `Huehueti.observables`. If your catalog uses different names, either rename the columns or update `Huehueti.py`'s observables mapping accordingly.
-
-## Units
-- Photometry: magnitudes (`[mag]`)
-- Parallax: milliarcseconds (`[mas]`)
-
-## Missing data / error handling
-- Zero error values in error columns are treated as missing and replaced by NaN before filling.
-- By default missing error values are filled with the maximum value of the error column (use `fill_nan="mean"` in `load_data` to use the mean instead).
-- If a photometric value is missing (NaN), its corresponding error is set back to NaN.
-
-## Photometric limits filtering
-- The loader filters out sources that are brighter than the isochrone model limits. The function `_isochrone_photometric_limits` reads `phot_min` from the serialized MLP (`file_mlp`) and converts it to apparent magnitudes using an average distance estimate (1000 / parallax mean).
-
-## Files and directories
-- Default directories used in the example `__main__`:
-  - Data: `./data/` (e.g., `data/Pleiades.csv`)
-  - MLPs: `./mlps/` (e.g., `mlps/PARSEC_10x96/mlp.pkl`)
-  - Outputs: `./outputs/…/`
-- Key outputs created by Huehueti (in `dir_out`):
-  - `Identifiers.csv`, `Observations.nc`, `Chains.nc`, `Prior.nc`
-  - Plots: `Posterior.pdf`, `Comparison_prior_posterior.pdf`, `Predictions.pdf`, `Color-magnitude_diagram.png`, etc.
-  - Statistics: `Sources_statistics.csv`, `Global_statistics.csv`
-
-## Quick run (example)
-1. Place your input CSV at `data/YourCatalog.csv`.
-2. Ensure you have an MLP dill file (e.g. `mlps/PARSEC_10x96/mlp.pkl`) with the `phot_min` and domain attributes consumed by the code.
-3. Run:
-   ```bash
-   python Huehueti.py

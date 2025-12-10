@@ -631,10 +631,11 @@ class Huehueti:
 		for var in self.ds_posterior.data_vars:
 			print("{0} : {1:2.4f}".format(var,np.mean(ess[var].values)))
 
-		print("Step size:")
-		# The trace object has sample_stats; average over draws to report mean step_size per chain.
-		for i,val in enumerate(self.trace.sample_stats["step_size"].mean(dim="draw")):
-			print("Chain {0}: {1:3.8f}".format(i,val))
+		if hasattr(self.trace,"sample_stats"):
+			print("Step size:")
+			# The trace object has sample_stats; average over draws to report mean step_size per chain.
+			for i,val in enumerate(self.trace.sample_stats["step_size"].mean(dim="draw")):
+				print("Chain {0}: {1:3.8f}".format(i,val))
 
 	def plot_chains(self,
 		file_trace_sources: Optional[str] = None,

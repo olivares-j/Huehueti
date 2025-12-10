@@ -441,7 +441,7 @@ class Huehueti:
 						return_inferencedata=True)
 					traces.append(tr)
 				trace = az.concat(traces,dim="chain")
-				
+
 			else:
 				#---------- Posterior sampling using default sampler backend (e.g., numpyro) -----------
 				trace = pm.sample(
@@ -1031,16 +1031,14 @@ if __name__ == "__main__":
 
 	# Example run when executed as a script. These defaults assume a certain
 	# directory layout (data/, mlps/, outputs/) relative to the current working dir.
-	nuts_sampler = "numpyro"
-	n_stars = None
 
 	dir_data = os.getcwd() + "/data/"
-	dir_out  = os.getcwd() + "/outputs/PARSEC_v0_test_7/"
+	dir_out  = os.getcwd() + "/outputs/PARSEC_v0_test_8/"
 	dir_mlps = os.getcwd() + "/mlps/"
 
 	os.makedirs(dir_out,exist_ok=True)
 
-	file_data      = dir_data + "Pleiades_test.csv"
+	file_data      = dir_data + "Pleiades.csv"
 	file_mlp       = dir_mlps + "PARSEC_10x96/mlp.pkl"
 	file_posterior = dir_out  + "Chains.nc"
 	file_prior     = dir_out  + "Prior.nc"
@@ -1086,14 +1084,15 @@ if __name__ == "__main__":
 
 
 	hue = Huehueti(dir_out = dir_out, file_mlp=file_mlp)
-	hue.load_data(file_data = file_data, n_stars = n_stars)
+	hue.load_data(file_data = file_data)
 	hue.setup(prior = priors)
 	# hue.plot_pgm()
 	hue.run(
 		init_iters=int(1e6),
-		init_refine=True,
-		tuning_iters=5000,
-		sample_iters=2000)
+		init_refine=False,
+		nuts_sampler="ADVI",
+		tuning_iters=10000,
+		sample_iters=20000)
 	hue.load_trace()
 	hue.convergence()
 	hue.plot_chains()#IDs=[69945814454871680,64979732749686016,65247704349267584])

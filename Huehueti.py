@@ -1087,13 +1087,14 @@ if __name__ == "__main__":
 	hue = Huehueti(dir_out = dir_out, file_mlp=file_mlp)
 	hue.load_data(file_data = file_data)
 	hue.setup(prior = priors)
-	# hue.plot_pgm()
+	hue.plot_pgm()
 	hue.run(
 		init_iters=int(1e6),
 		init_refine=False,
 		nuts_sampler="advi",
-		tuning_iters=50000,
-		sample_iters=50000)
+		tuning_iters=int(5e4),
+		sample_iters=2000,
+		prior_iters=2000)
 	hue.load_trace()
 	hue.convergence()
 	hue.plot_chains()#IDs=[69945814454871680,64979732749686016,65247704349267584])

@@ -422,6 +422,26 @@ class Huehueti:
 					nuts_sampler_kwargs={"step_size":step_size},
 					model=self.Model
 					)
+			elif nuts_sampler == "advi":
+				print("WARNING: Sampling posterior with ADVI")
+				traces = []
+				for chain in np.arange(chains):
+					print("sampling chain: {0}".format(chain))
+					approx = pm.fit(
+						start=initial_points[chain],
+						random_seed=chain,
+						n=tuning_iters,
+						method="advi",
+						model=self.Model,
+						progressbar=True
+						)
+					tr = approx.sample(
+						draws=sample_iters, 
+						random_seed=None,
+						return_inferencedata=True)
+					traces.append(tr)
+				trace = az.concat(traces,dim="chain")
+				
 			else:
 				#---------- Posterior sampling using default sampler backend (e.g., numpyro) -----------
 				trace = pm.sample(

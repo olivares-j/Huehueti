@@ -422,7 +422,7 @@ class Huehueti:
 					nuts_sampler_kwargs={"step_size":step_size},
 					model=self.Model
 					)
-			elif nuts_sampler == "advi":
+			elif nuts_sampler.lowercase() == "advi":
 				print("WARNING: Sampling posterior with ADVI")
 				traces = []
 				for chain in np.arange(chains):

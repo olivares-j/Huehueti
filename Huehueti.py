@@ -1091,9 +1091,9 @@ if __name__ == "__main__":
 	hue.run(
 		init_iters=int(1e6),
 		init_refine=False,
-		nuts_sampler="ADVI",
-		tuning_iters=10000,
-		sample_iters=20000)
+		nuts_sampler="advi",
+		tuning_iters=50000,
+		sample_iters=50000)
 	hue.load_trace()
 	hue.convergence()
 	hue.plot_chains()#IDs=[69945814454871680,64979732749686016,65247704349267584])
@@ -1101,5 +1101,4 @@ if __name__ == "__main__":
 	hue.plot_cpp()
 	hue.plot_predictions()
 	hue.plot_cmd()
-	# hue.plot_hrd()
 	hue.save_statistics()

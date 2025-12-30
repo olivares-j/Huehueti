@@ -27,7 +27,8 @@ class Model_v0(Model):
 	"""
 	
 	def __init__(self,
-		mlp,
+		mlp_phot,
+		mlp_mass,
 		prior : dict,
 		identifiers : np.ndarray,
 		astrometry_mu : np.ndarray,
@@ -135,11 +136,13 @@ class Model_v0(Model):
 
 		#-------------- Neural Network -----------------------
 		# Use the provided MLP callable to predict mass and absolute photometry for each source.
-		mass,absolute_photometry = mlp(age,theta, n_stars)
+		absolute_photometry = mlp_phot(age, theta, n_stars)
+		mass_logTeff_logg   = mlp_mass(age, theta,n_stars)
 		#-----------------------------------------------------
 
-		# Expose mass as a deterministic per-source variable in the model
-		mass = pm.Deterministic('mass',mass,dims="source_id")
+		# Expose mass, Teff as a deterministic per-source variable in the model
+		mass = pm.Deterministic('mass',mass_logTeff_logg[:,0],dims="source_id")
+		# teff = pm.Deterministic('teff',mass_logTeff_logg[:,1],dims="source_id")
 		
 		# Convert absolute photometry to apparent magnitudes using per-source distance
 		photometry = pm.Deterministic('photometry',
@@ -149,7 +152,7 @@ class Model_v0(Model):
 
 		#================== Addition of uncertainties ====================================
 		# Combine observed photometric uncertainties with model photometric dispersion
-		photometry_sigma = photometry_sd**2 + photometric_dispersion**2
+		photometry_sigma = pm.math.sqrt(photometry_sd**2 + photometric_dispersion**2)
 		#=================================================================================
 
 		#===================== Likelihood =============================

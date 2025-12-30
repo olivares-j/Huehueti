@@ -92,40 +92,4 @@ def apparent_to_absolute(m, distance):
     return m - 5.*np.log10(distance) + 5.
 
 
-def relu(x, alpha=0):
-    """
-    Compute the element-wise rectified linear activation function.
 
-    Parameters
-    ----------
-    x : symbolic tensor
-        Tensor to compute the activation function for.
-    alpha : `scalar or tensor, optional`
-        Slope for negative input, usually between 0 and 1. The default value
-        of 0 will lead to the standard rectifier, 1 will lead to
-        a linear activation function, and any value in between will give a
-        leaky rectifier. A shared variable (broadcastable against `x`) will
-        result in a parameterized rectifier with learnable slope(s).
-
-    Returns
-    -------
-    symbolic tensor
-        Element-wise rectifier applied to `x`.
-
-    Notes
-    -----
-    This is numerically equivalent to ``pt.switch(x > 0, x, alpha * x)``
-    (or ``pt.maximum(x, alpha * x)`` for ``alpha < 1``), but uses a faster
-    formulation or an optimized Op, so we encourage to use this function.
-
-    """
-    if alpha == 0:
-        return 0.5 * (x + abs(x))
-    else:
-        # We can't use 0.5 and 1 for one and half.  as if alpha is a
-        # numpy dtype, they will be considered as float64, so would
-        # cause upcast to float64.
-        alpha = pt.as_tensor_variable(alpha)
-        f1 = 0.5 * (1 + alpha)
-        f2 = 0.5 * (1 - alpha)
-        return f1 * x + f2 * abs(x)

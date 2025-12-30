@@ -14,8 +14,8 @@ train = True
 
 # ------------------------------ Model properties --------------------------------
 features = ["age_Myr","parameter"]
-targets  = ['Gmag', 'G_BPmag', 'G_RPmag', 'gP1mag', 'rP1mag', 'iP1mag','zP1mag','yP1mag','Jmag', 'Hmag', 'Ksmag']
-list_of_num_layers = [12] # Number of hidden layers
+targets  = ["Mini","logTe","logg"]
+list_of_num_layers = [4,5,6,7,8,9,10] # Number of hidden layers
 size_layers = 256  # Units in each hidden layer
 training_epochs = [9999,9999,9999]
 learning_rates  = [1e-3,1e-4,1e-5]
@@ -28,7 +28,7 @@ batch_fraction = 1.0
 dir_base  = "/home/jolivares/Repos/Huehueti/"
 file_iso  = dir_base + "data/parametrizations/parametrized_max_label_1_PARSEC_20-200Myr_GDR3+PanSTARRS+2MASS.csv"
 dir_mlps  = dir_base + "mlps/PARSEC/"
-base_fld  = "GP2_l{0}_s{1}/"
+base_fld  = "mTg_l{0}_s{1}/"
 base_mlp  = "{0}mlp.pkl"
 base_lss  = "{0}loss.png"
 base_fit  = "{0}fit.png"
@@ -172,14 +172,14 @@ for num_layers in list_of_num_layers:
 	input_tst = scalers[1].transform(scalers[0].transform(df_features.to_numpy()))
 	ouput_tst = model(input_tst,training=False)
 
-	df_bands = pd.DataFrame(columns=targets,data=ouput_tst._numpy())
-	df_prd = pd.concat([df_features,df_bands],axis=1,ignore_index=False)
+	df_tar = pd.DataFrame(columns=targets,data=ouput_tst._numpy())
+	df_prd = pd.concat([df_features,df_tar],axis=1,ignore_index=False)
 
-	df = pd.merge(left=df_tst,right=df_bands,left_index=True,right_index=True,suffixes=["_tst","_prd"])
+	df = pd.merge(left=df_tst,right=df_tar,left_index=True,right_index=True,suffixes=["_tst","_prd"])
 	df.set_index(features,drop=True,inplace=True)
 
 	for trgt in targets:
-		df[trgt] = df.apply(lambda x: (x[trgt+"_prd"]-x[trgt+"_tst"]),axis=1)
+		df[trgt] = df.apply(lambda x: (x[trgt+"_prd"]-x[trgt+"_tst"])/x[trgt+"_tst"],axis=1)
 
 	df = df.loc[:,targets].stack().reset_index()
 	df.columns = ["age_Myr","parameter","target","value"]
@@ -193,28 +193,25 @@ for num_layers in list_of_num_layers:
 						style="target",
 						zorder=0)
 	ax.set_xlabel("Parameter")
-	ax.set_ylabel("(Predicted-Test)")
+	ax.set_ylabel("(Predicted-Test)/Test")
 	plt.legend(bbox_to_anchor=(1.01, 0.5), loc="center left")
 	fig.savefig(base_err.format(dir_case))
 	plt.close()
 
-	# df_tst.loc[:,"color"] = df_tst.apply(lambda x: x["Gmag"]-x["G_RPmag"],axis=1)
-	# df_prd.loc[:,"color"] = df_prd.apply(lambda x: x["Gmag"]-x["G_RPmag"],axis=1)
-
 	ax = sns.scatterplot(data=df_tst,
 			x="parameter",
-			y="Gmag",
+			y="Mini",
 			hue="age_Myr",
 			zorder=0)
 	ax = sns.lineplot(data=df_prd,
 			x="parameter",
-			y="Gmag",
+			y="Mini",
 			hue="age_Myr",
 			legend=False,
 			sort=False,
 			zorder=1,
 			ax=ax)
 	ax.set_xlabel("Theta")
-	ax.set_ylabel("G [mag]")
+	ax.set_ylabel("Mini")
 	plt.savefig(base_fit.format(dir_case))
 	plt.close()

@@ -76,7 +76,6 @@ class Huehueti:
 		"absolute":['Gmag', 'G_BPmag', 'G_RPmag', 'gP1mag', 'rP1mag', 'iP1mag', 'zP1mag','yP1mag', 'Jmag', 'Hmag', 'Ksmag'],
 		"photometry":['g', 'bp', 'rp','gmag','rmag','imag','zmag','ymag','Jmag','Hmag','Kmag'],
 		"photometry_error":['g_error','bp_error','rp_error', 'e_gmag', 'e_rmag', 'e_imag', 'e_zmag', 'e_ymag', 'e_Jmag', 'e_Hmag', 'e_Kmag' ],
-		"photometry_units":["[mag]","[mag]","[mag]","[mag]","[mag]","[mag]","[mag]","[mag]","[mag]","[mag]","[mag]"],
 		"astrometry":["parallax"],
 		"astrometry_error":["parallax_error"],
 		"astrometry_units":["[mas]"]
@@ -953,10 +952,8 @@ class Huehueti:
 						zorder=1,
 						ax=ax)
 		ax.set_xlabel("{0} - {1} {2}".format(
-			cmd["color"][0],cmd["color"][1],
-			self.observables["photometry_units"][0]))
-		ax.set_ylabel("{0} {1}".format(cmd["magnitude"],
-			self.observables["photometry_units"][0]))
+			cmd["color"][0],cmd["color"][1],"[mag]"))
+		ax.set_ylabel("{0} {1}".format(cmd["magnitude"],"[mag]"))
 		ax.invert_yaxis()  # Magnitudes increase downward in plots
 		ax.set_title("Apparent photometry")
 		plt.savefig(file_plot,bbox_inches='tight',dpi=dpi)

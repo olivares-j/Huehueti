@@ -129,11 +129,13 @@ class MLP_phot:
 				mlp = load(file)
 				weights = mlp["weights"]
 				scalers = mlp["scalers"]
+				num_layers = mlp["num_layers"]
 				self.targets = mlp["targets"]
 				self.phot_min = mlp["phot_min"]
 				self.age_domain  = mlp["age_domain"]
-				# theta (parameter) domain used by the MLP
 				self.theta_domain = mlp["par_domain"]
+
+			assert num_layers == 10, "Error: mismatch in number of layers!"
 
 		except FileNotFoundError as error:
 			# Provide a clear error for the user if file missing
@@ -141,29 +143,8 @@ class MLP_phot:
 		else:
 			# Unpack weights/biases according to the trained network layout.
 			# The code expects exactly this many items and ordering.
-			self.W1 = weights[0]
-			self.b1 = weights[1]
-			self.W2 = weights[2]
-			self.b2 = weights[3]
-			self.W3 = weights[4]
-			self.b3 = weights[5]
-			self.W4 = weights[6]
-			self.b4 = weights[7]
-			self.W5 = weights[8]
-			self.b5 = weights[9]
-			self.W6 = weights[10]
-			self.b6 = weights[11]
-			self.W7 = weights[12]
-			self.b7 = weights[13]
-			self.W8 = weights[14]
-			self.b8 = weights[15]
-			self.W9 = weights[16]
-			self.b9 = weights[17]
-			self.W10 = weights[18]
-			self.b10 = weights[19]
-			# Final linear layer mapping to output photometry (and mass)
-			self.WPho = weights[20]
-			self.bPho = weights[21]
+			self.W = weights[::2]
+			self.b = weights[1::2]
 
 			# Scalers used for preprocessing the inputs
 			self.BoxCox = scalers[0]
@@ -205,33 +186,22 @@ class MLP_phot:
 
 		# Normalize using MinMax stored values and transpose to shape (n_stars, n_features)
 		# so that a forward pass with weight matrices (features x hidden) works naturally.
-		inputs = ((x - self.min_val) / self.dff_val).T
+		A0 = ((x - self.min_val) / self.dff_val).T
 
 		# Forward pass through the network: linear -> relu -> linear -> relu -> ...
 		# Each Z* is the pre-activation and A* the post-activation (relu).
-		Z1 = pt.dot(inputs, self.W1) + self.b1
-		A1 = relu(Z1)
-		Z2 = pt.dot(A1, self.W2) + self.b2
-		A2 = relu(Z2)
-		Z3 = pt.dot(A2, self.W3) + self.b3
-		A3 = relu(Z3)
-		Z4 = pt.dot(A3, self.W4) + self.b4
-		A4 = relu(Z4)
-		Z5 = pt.dot(A4, self.W5) + self.b5
-		A5 = relu(Z5)
-		Z6 = pt.dot(A5, self.W6) + self.b6
-		A6 = relu(Z6)
-		Z7 = pt.dot(A6, self.W7) + self.b7
-		A7 = relu(Z7)
-		Z8 = pt.dot(A7, self.W8) + self.b8
-		A8 = relu(Z8)
-		Z9 = pt.dot(A8, self.W9) + self.b9
-		A9 = relu(Z9)
-		Z10 = pt.dot(A9, self.W10) + self.b10
-		A10 = relu(Z10)
-		# Final linear output (no activation) gives targets for mass + photometry bands
-		targets = pt.dot(A10, self.WPho) + self.bPho
-
+		A1  = relu(pt.dot(A0, self.W[0])  + self.b[0])
+		A2  = relu(pt.dot(A1, self.W[1])  + self.b[1])
+		A3  = relu(pt.dot(A2, self.W[2])  + self.b[2])
+		A4  = relu(pt.dot(A3, self.W[3])  + self.b[3])
+		A5  = relu(pt.dot(A4, self.W[4])  + self.b[4])
+		A6  = relu(pt.dot(A5, self.W[5])  + self.b[5])
+		A7  = relu(pt.dot(A6, self.W[6])  + self.b[6])
+		A8  = relu(pt.dot(A7, self.W[7])  + self.b[7])
+		A9  = relu(pt.dot(A8, self.W[8])  + self.b[8])
+		A10 = relu(pt.dot(A9, self.W[9])  + self.b[9])
+		# Final linear output (no activation)
+		targets = pt.dot(A10, self.W[10]) + self.b[10]
 
 		return targets
 
@@ -284,28 +254,8 @@ class MLP_mass:
 		else:
 			# Unpack weights/biases according to the trained network layout.
 			# The code expects exactly this many items and ordering.
-			self.W1 = weights[0]
-			self.b1 = weights[1]
-			self.W2 = weights[2]
-			self.b2 = weights[3]
-			self.W3 = weights[4]
-			self.b3 = weights[5]
-			self.W4 = weights[6]
-			self.b4 = weights[7]
-			self.W5 = weights[8]
-			self.b5 = weights[9]
-			self.W6 = weights[10]
-			self.b6 = weights[11]
-			self.W7 = weights[12]
-			self.b7 = weights[13]
-			self.W8 = weights[14]
-			self.b8 = weights[15]
-			self.W9 = weights[16]
-			self.b9 = weights[17]
-			self.W10 = weights[18]
-			self.b10 = weights[19]
-			self.Wout = weights[20]
-			self.bout = weights[21]
+			self.W = weights[::2]
+			self.b = weights[1::2]
 
 			# Scalers used for preprocessing the inputs
 			self.BoxCox = scalers[0]
@@ -347,32 +297,28 @@ class MLP_mass:
 
 		# Normalize using MinMax stored values and transpose to shape (n_stars, n_features)
 		# so that a forward pass with weight matrices (features x hidden) works naturally.
-		inputs = ((x - self.min_val) / self.dff_val).T
+		A0 = ((x - self.min_val) / self.dff_val).T
 
 		# Forward pass through the network: linear -> relu -> linear -> relu -> ...
-		# Each Z* is the pre-activation and A* the post-activation (relu).
-		Z1 = pt.dot(inputs, self.W1) + self.b1
-		A1 = relu(Z1)
-		Z2 = pt.dot(A1, self.W2) + self.b2
-		A2 = relu(Z2)
-		Z3 = pt.dot(A2, self.W3) + self.b3
-		A3 = relu(Z3)
-		Z4 = pt.dot(A3, self.W4) + self.b4
-		A4 = relu(Z4)
-		Z5 = pt.dot(A4, self.W5) + self.b5
-		A5 = relu(Z5)
-		Z6 = pt.dot(A5, self.W6) + self.b6
-		A6 = relu(Z6)
-		Z7 = pt.dot(A6, self.W7) + self.b7
-		A7 = relu(Z7)
-		Z8 = pt.dot(A7, self.W8) + self.b8
-		A8 = relu(Z8)
-		Z9 = pt.dot(A8, self.W9) + self.b9
-		A9 = relu(Z9)
-		Z10 = pt.dot(A9, self.W10) + self.b10
-		A10 = relu(Z10)
+
+		A1  = relu(pt.dot(A0, self.W[0])  + self.b[0])
+		A2  = relu(pt.dot(A1, self.W[1])  + self.b[1])
+		A3  = relu(pt.dot(A2, self.W[2])  + self.b[2])
+		A4  = relu(pt.dot(A3, self.W[3])  + self.b[3])
+		A5  = relu(pt.dot(A4, self.W[4])  + self.b[4])
+		A6  = relu(pt.dot(A5, self.W[5])  + self.b[5])
+		A7  = relu(pt.dot(A6, self.W[6])  + self.b[6])
+		A8  = relu(pt.dot(A7, self.W[7])  + self.b[7])
+		A9  = relu(pt.dot(A8, self.W[8])  + self.b[8])
+		A10 = relu(pt.dot(A9, self.W[9])  + self.b[9])
+		A11 = relu(pt.dot(A10,self.W[10]) + self.b[10])
+		A12 = relu(pt.dot(A11,self.W[11]) + self.b[11])
+		A13 = relu(pt.dot(A12,self.W[12]) + self.b[12])
+		A14 = relu(pt.dot(A13,self.W[13]) + self.b[13])
+		A15 = relu(pt.dot(A14,self.W[14]) + self.b[14])
+		A16 = relu(pt.dot(A15,self.W[15]) + self.b[15])
 		# Final linear output (no activation) gives targets for mass + photometry bands
-		targets = pt.dot(A10, self.Wout) + self.bout
+		targets = pt.dot(A16, self.W[16]) + self.b[16]
 
 		return targets
 
@@ -385,8 +331,8 @@ if __name__ == "__main__":
 	dir_base = "/home/jolivares/Repos/Huehueti/"
 
 	file_iso = dir_base + "data/parametrizations/parametrized_max_label_1_PARSEC_20-200Myr_GDR3+PanSTARRS+2MASS.csv"
-	file_mlp_phot = dir_base + "mlps/PARSEC_phot_10x20/mlp.pkl"
-	file_mlp_mass = dir_base + "mlps/PARSEC_mass_10x100/mlp.pkl"
+	file_mlp_phot = dir_base + "mlps/PARSEC/GP2_l10_s256/mlp.pkl"
+	file_mlp_mass = dir_base + "mlps/PARSEC/PARSEC_mass_16x64/mlp.pkl"
 
 	mlp_phot = MLP_phot(file_mlp=file_mlp_phot)
 	mlp_mass = MLP_mass(file_mlp=file_mlp_mass)
@@ -404,6 +350,8 @@ if __name__ == "__main__":
 	mass_logTe_logg = mlp_mass(age,theta,n_stars)
 	df_phot = pn.DataFrame(data=absolute_photometry.eval(),columns=mlp_phot.targets)
 	df_mass = pn.DataFrame(data=mass_logTe_logg.eval(),columns=mlp_mass.targets)
+	print(mass_logTe_logg.eval().shape)
+	sys.exit()
 	df_prd = df_phot.join(df_mass)
 	df_prd["parameter"] = theta
 

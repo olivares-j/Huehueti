@@ -829,10 +829,9 @@ class Huehueti:
 			df = df_obs.join(df_prd)
 
 			# For each observable, plot observed vs predicted with errorbars.
-			for var,err,unit in zip(
+			for var,err in zip(
 				self.observables[case],
-				self.observables[case+"_error"],
-				self.observables[case+"_units"]):
+				self.observables[case+"_error"]):
 				plt.figure(0,figsize=figsize)
 				ax = plt.gca()
 				ax.errorbar(x=df[var], y=df["pred_"+var]-df[var], 
@@ -843,8 +842,8 @@ class Huehueti:
 						color="black", 
 						ecolor='gray', 
 						zorder=1)
-				ax.set_xlabel("Observed {0} {1}".format(var,unit))
-				ax.set_ylabel("$\\Delta$ (P-O) {0} {1}".format(var,unit))
+				ax.set_xlabel("Observed {0}".format(var))
+				ax.set_ylabel("$\\Delta$ (P-O) {0}".format(var))
 				pdf.savefig(bbox_inches='tight')
 				plt.close(0)
 		pdf.close()
@@ -1052,15 +1051,15 @@ if __name__ == "__main__":
 	# directory layout (data/, mlps/, outputs/) relative to the current working dir.
 
 	dir_data = os.getcwd() + "/data/synthetic/"
-	dir_out  = os.getcwd() + "/outputs/synthetic_PARSEC_v0_a150_t0.01_s0/"
-	dir_mlps = os.getcwd() + "/mlps/"
+	dir_out  = os.getcwd() + "/outputs/synthetic_PARSEC_v0_a50_t0.01_s0_new/"
+	dir_mlps = os.getcwd() + "/mlps/PARSEC/"
 
 	os.makedirs(dir_out,exist_ok=True)
 
 	# file_data      = dir_data + "Pleiades.csv"
-	file_data      = dir_data + "Synthetic_a150_n50_d136_t0.01_s0.csv"
-	file_mlp_phot  = dir_mlps + "PARSEC_phot_10x20/mlp.pkl"
-	file_mlp_mass  = dir_mlps + "PARSEC_mass_10x100/mlp.pkl"
+	file_data      = dir_data + "Synthetic_a50_n50_d136_t0.01_s0.csv"
+	file_mlp_phot  = dir_mlps + "GP2_l10_s256/mlp.pkl"
+	file_mlp_mass  = dir_mlps + "PARSEC_mass_16x64/mlp.pkl"
 	file_posterior = dir_out  + "Chains.nc"
 	file_prior     = dir_out  + "Prior.nc"
 

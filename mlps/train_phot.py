@@ -10,12 +10,12 @@ from mlp_model import create_custom_model
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
-train = True
+train = False
 
 # ------------------------------ Model properties --------------------------------
 features = ["age_Myr","parameter"]
 targets  = ['Gmag', 'G_BPmag', 'G_RPmag', 'gP1mag', 'rP1mag', 'iP1mag','zP1mag','yP1mag','Jmag', 'Hmag', 'Ksmag']
-list_of_num_layers = [12] # Number of hidden layers
+list_of_num_layers = [9] # Number of hidden layers
 size_layers = 256  # Units in each hidden layer
 training_epochs = [9999,9999,9999]
 learning_rates  = [1e-3,1e-4,1e-5]
@@ -37,7 +37,7 @@ base_err  = "{0}error.png"
 
 #------------- Load data ----------------------------------------------------
 df_iso = pd.read_csv(file_iso,usecols=sum([features,targets],[]))
-df_iso = df_iso.query("age_Myr == [20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,140,145,150,155,160,165,170,175,180,185,190,195,200]")
+# df_iso = df_iso.query("age_Myr == [20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,140,145,150,155,160,165,170,175,180,185,190,195,200]")
 # df_iso = df_iso.query("age_Myr == [20,30,40,50,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200]")
 # df_iso = df_iso.query("age_Myr == [20,40,60,80,100,120,140,160,180,200]")
 # df_iso = df_iso.query("age_Myr == [20,200]")

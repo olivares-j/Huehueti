@@ -10,13 +10,13 @@ from mlp_model import create_custom_model
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
-train = False
+train = True
 
 # ------------------------------ Model properties --------------------------------
 features = ["age_Myr","parameter"]
 targets  = ['Gmag', 'G_BPmag', 'G_RPmag', 'gP1mag', 'rP1mag', 'iP1mag','zP1mag','yP1mag','Jmag', 'Hmag', 'Ksmag']
-list_of_num_layers = [9] # Number of hidden layers
-size_layers = 256  # Units in each hidden layer
+list_of_num_layers = [9,10,11,12] # Number of hidden layers
+size_layers = 512  # Units in each hidden layer
 training_epochs = [9999,9999,9999]
 learning_rates  = [1e-3,1e-4,1e-5]
 activation_layers = "relu" # Activation functions for each hidden layer

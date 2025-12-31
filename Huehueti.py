@@ -1051,15 +1051,15 @@ if __name__ == "__main__":
 	# directory layout (data/, mlps/, outputs/) relative to the current working dir.
 
 	dir_data = os.getcwd() + "/data/synthetic/"
-	dir_out  = os.getcwd() + "/outputs/synthetic_PARSEC_v0_a50_t0.01_s0_new/"
+	dir_out  = os.getcwd() + "/outputs/synthetic_PARSEC_v0_a50_t0.01_s0_9x512/"
 	dir_mlps = os.getcwd() + "/mlps/PARSEC/"
 
 	os.makedirs(dir_out,exist_ok=True)
 
 	# file_data      = dir_data + "Pleiades.csv"
 	file_data      = dir_data + "Synthetic_a50_n50_d136_t0.01_s0.csv"
-	file_mlp_phot  = dir_mlps + "GP2_l10_s256/mlp.pkl"
-	file_mlp_mass  = dir_mlps + "PARSEC_mass_16x64/mlp.pkl"
+	file_mlp_phot  = dir_mlps + "GP2_l9_s512/mlp.pkl"
+	file_mlp_mass  = dir_mlps + "mTg_l7_s256/mlp.pkl"
 	file_posterior = dir_out  + "Chains.nc"
 	file_prior     = dir_out  + "Prior.nc"
 
@@ -1116,7 +1116,7 @@ if __name__ == "__main__":
 	hue.setup(prior = priors)
 	# hue.plot_pgm()
 	hue.run(
-		init_iters=int(8e4),
+		init_iters=int(6e4),
 		init_refine=False,
 		nuts_sampler="advi",
 		tuning_iters=int(5e4),

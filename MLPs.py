@@ -135,7 +135,7 @@ class MLP_phot:
 				self.age_domain  = mlp["age_domain"]
 				self.theta_domain = mlp["par_domain"]
 
-			assert num_layers == 10, "Error: mismatch in number of layers!"
+			assert num_layers == 9, "Error: mismatch in number of layers!"
 
 		except FileNotFoundError as error:
 			# Provide a clear error for the user if file missing
@@ -199,9 +199,11 @@ class MLP_phot:
 		A7  = relu(pt.dot(A6, self.W[6])  + self.b[6])
 		A8  = relu(pt.dot(A7, self.W[7])  + self.b[7])
 		A9  = relu(pt.dot(A8, self.W[8])  + self.b[8])
-		A10 = relu(pt.dot(A9, self.W[9])  + self.b[9])
+		# A10 = relu(pt.dot(A9, self.W[9])  + self.b[9])
+		# A11 = relu(pt.dot(A10, self.W[10])  + self.b[10])
+		# A12 = relu(pt.dot(A11, self.W[11])  + self.b[11])
 		# Final linear output (no activation)
-		targets = pt.dot(A10, self.W[10]) + self.b[10]
+		targets = pt.dot(A9, self.W[9]) + self.b[9]
 
 		return targets
 
@@ -243,10 +245,13 @@ class MLP_mass:
 				mlp = load(file)
 				weights = mlp["weights"]
 				scalers = mlp["scalers"]
+				num_layers = mlp["num_layers"]
 				self.targets = mlp["targets"]
 				self.age_domain  = mlp["age_domain"]
 				# theta (parameter) domain used by the MLP
 				self.theta_domain = mlp["par_domain"]
+
+			assert num_layers == 7, "Error: mismatch in number of layers!"
 
 		except FileNotFoundError as error:
 			# Provide a clear error for the user if file missing
@@ -308,17 +313,17 @@ class MLP_mass:
 		A5  = relu(pt.dot(A4, self.W[4])  + self.b[4])
 		A6  = relu(pt.dot(A5, self.W[5])  + self.b[5])
 		A7  = relu(pt.dot(A6, self.W[6])  + self.b[6])
-		A8  = relu(pt.dot(A7, self.W[7])  + self.b[7])
-		A9  = relu(pt.dot(A8, self.W[8])  + self.b[8])
-		A10 = relu(pt.dot(A9, self.W[9])  + self.b[9])
-		A11 = relu(pt.dot(A10,self.W[10]) + self.b[10])
-		A12 = relu(pt.dot(A11,self.W[11]) + self.b[11])
-		A13 = relu(pt.dot(A12,self.W[12]) + self.b[12])
-		A14 = relu(pt.dot(A13,self.W[13]) + self.b[13])
-		A15 = relu(pt.dot(A14,self.W[14]) + self.b[14])
-		A16 = relu(pt.dot(A15,self.W[15]) + self.b[15])
+		# A8  = relu(pt.dot(A7, self.W[7])  + self.b[7])
+		# A9  = relu(pt.dot(A8, self.W[8])  + self.b[8])
+		# A10 = relu(pt.dot(A9, self.W[9])  + self.b[9])
+		# A11 = relu(pt.dot(A10,self.W[10]) + self.b[10])
+		# A12 = relu(pt.dot(A11,self.W[11]) + self.b[11])
+		# A13 = relu(pt.dot(A12,self.W[12]) + self.b[12])
+		# A14 = relu(pt.dot(A13,self.W[13]) + self.b[13])
+		# A15 = relu(pt.dot(A14,self.W[14]) + self.b[14])
+		# A16 = relu(pt.dot(A15,self.W[15]) + self.b[15])
 		# Final linear output (no activation) gives targets for mass + photometry bands
-		targets = pt.dot(A16, self.W[16]) + self.b[16]
+		targets = pt.dot(A7, self.W[7]) + self.b[7]
 
 		return targets
 
@@ -331,8 +336,8 @@ if __name__ == "__main__":
 	dir_base = "/home/jolivares/Repos/Huehueti/"
 
 	file_iso = dir_base + "data/parametrizations/parametrized_max_label_1_PARSEC_20-200Myr_GDR3+PanSTARRS+2MASS.csv"
-	file_mlp_phot = dir_base + "mlps/PARSEC/GP2_l10_s256/mlp.pkl"
-	file_mlp_mass = dir_base + "mlps/PARSEC/PARSEC_mass_16x64/mlp.pkl"
+	file_mlp_phot = dir_base + "mlps/PARSEC/GP2_l9_s512/mlp.pkl"
+	file_mlp_mass = dir_base + "mlps/PARSEC/mTg_l7_s256/mlp.pkl"
 
 	mlp_phot = MLP_phot(file_mlp=file_mlp_phot)
 	mlp_mass = MLP_mass(file_mlp=file_mlp_mass)
@@ -350,8 +355,6 @@ if __name__ == "__main__":
 	mass_logTe_logg = mlp_mass(age,theta,n_stars)
 	df_phot = pn.DataFrame(data=absolute_photometry.eval(),columns=mlp_phot.targets)
 	df_mass = pn.DataFrame(data=mass_logTe_logg.eval(),columns=mlp_mass.targets)
-	print(mass_logTe_logg.eval().shape)
-	sys.exit()
 	df_prd = df_phot.join(df_mass)
 	df_prd["parameter"] = theta
 

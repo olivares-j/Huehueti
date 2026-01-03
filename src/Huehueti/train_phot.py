@@ -15,8 +15,8 @@ train = True
 # ------------------------------ Model properties --------------------------------
 features = ["age_Myr","parameter"]
 targets  = ['Gmag', 'G_BPmag', 'G_RPmag', 'gP1mag', 'rP1mag', 'iP1mag','zP1mag','yP1mag','Jmag', 'Hmag', 'Ksmag']
-list_of_num_layers = [9,10,11,12] # Number of hidden layers
-size_layers = 512  # Units in each hidden layer
+list_of_num_layers = [13,14,15,16] # Number of hidden layers
+size_layers = 256  # Units in each hidden layer
 training_epochs = [9999,9999,9999]
 learning_rates  = [1e-3,1e-4,1e-5]
 activation_layers = "relu" # Activation functions for each hidden layer
@@ -25,9 +25,8 @@ batch_fraction = 1.0
 #--------------------------------------------------------------------------
 
 #--------------- Directories and files ---------------------------------------------
-dir_base  = "/home/jolivares/Repos/Huehueti/"
-file_iso  = dir_base + "data/parametrizations/parametrized_max_label_1_PARSEC_20-200Myr_GDR3+PanSTARRS+2MASS.csv"
-dir_mlps  = dir_base + "mlps/PARSEC/"
+file_iso  = "/home/jolivares/Repos/Huehueti/data/parametrizations/parametrized_max_label_1_PARSEC_20-200Myr_GDR3+PanSTARRS+2MASS.csv"
+dir_mlps  = "/home/jolivares/Repos/Huehueti/mlps/PARSEC/"
 base_fld  = "GP2_l{0}_s{1}/"
 base_mlp  = "{0}mlp.pkl"
 base_lss  = "{0}loss.png"

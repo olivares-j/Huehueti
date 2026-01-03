@@ -25,9 +25,8 @@ batch_fraction = 1.0
 #--------------------------------------------------------------------------
 
 #--------------- Directories and files ---------------------------------------------
-dir_base  = "/home/jolivares/Repos/Huehueti/"
-file_iso  = dir_base + "data/parametrizations/parametrized_max_label_1_PARSEC_20-200Myr_GDR3+PanSTARRS+2MASS.csv"
-dir_mlps  = dir_base + "mlps/PARSEC/"
+file_iso  = "/home/jolivares/Repos/Huehueti/data/parametrizations/parametrized_max_label_1_PARSEC_20-200Myr_GDR3+PanSTARRS+2MASS.csv"
+dir_mlps  = "/home/jolivares/Repos/Huehueti/mlps/PARSEC/"
 base_fld  = "mTg_l{0}_s{1}/"
 base_mlp  = "{0}mlp.pkl"
 base_lss  = "{0}loss.png"

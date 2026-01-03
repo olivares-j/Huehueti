@@ -1,7 +1,9 @@
 # Local output directory
 outputs/
 data/
-mlps/PARSEC/
+mlps/
+validation/real/
+validation/synthetic/
 
 
 

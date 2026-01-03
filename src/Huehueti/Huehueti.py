@@ -146,7 +146,9 @@ class Huehueti:
 	def load_data(self, 
 		file_data: str, 
 		fill_nan: str = "max",
-		n_stars: Optional[int] = None
+		n_stars: Optional[int] = None,
+		max_phot_uncertainty: float = 1e-3,
+		min_observed_bands: int = 3
 	) -> None:
 		"""
 		Read dataset CSV and perform preprocessing.
@@ -195,7 +197,18 @@ class Huehueti:
 			# If the band value itself is missing (NaN) then set the error back to NaN.
 			# This protects from producing spurious error bars for missing measurements.
 			df.loc[np.isnan(df[value]),error] = np.nan
+
+			# Mask as missing bands with large uncertainties
+			mask_missing = df[error].apply(lambda x : x > max_phot_uncertainty ,axis=1)
+			df.loc[mask_missing,[value,error]] = np.nan
 		#-------------------------------------------------------------------------
+
+		#---- Drop sources not fulfilling min_observed bands ------
+		df.dropna(axis=0,
+			thresh=min_observed_bands,
+			subset=self.observables["photometry"],
+			inplace=True)
+		#--------------------------------------------------------------
 
 		print("Summary of input data:")
 		print(df.describe())
@@ -1051,13 +1064,13 @@ if __name__ == "__main__":
 	# directory layout (data/, mlps/, outputs/) relative to the current working dir.
 
 	dir_data = os.getcwd() + "/data/synthetic/"
-	dir_out  = os.getcwd() + "/outputs/synthetic_PARSEC_v0_a50_t0.01_s0_9x512/"
+	dir_out  = os.getcwd() + "/outputs/synthetic_PARSEC_v0_a90_n50_d136_t1e-03_s0/"
 	dir_mlps = os.getcwd() + "/mlps/PARSEC/"
 
 	os.makedirs(dir_out,exist_ok=True)
 
 	# file_data      = dir_data + "Pleiades.csv"
-	file_data      = dir_data + "Synthetic_a50_n50_d136_t0.01_s0.csv"
+	file_data      = dir_data + "Synthetic_a90_n50_d136_t1e-03_s0.csv"
 	file_mlp_phot  = dir_mlps + "GP2_l9_s512/mlp.pkl"
 	file_mlp_mass  = dir_mlps + "mTg_l7_s256/mlp.pkl"
 	file_posterior = dir_out  + "Chains.nc"

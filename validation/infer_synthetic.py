@@ -5,8 +5,8 @@ dir_base       = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/"
 file_mlp_phot  = "/home/jolivares/Repos/Huehueti/mlps/PARSEC/GP2_l9_s512/mlp.pkl"
 file_mlp_mass  = "/home/jolivares/Repos/Huehueti/mlps/PARSEC/mTg_l7_s256/mlp.pkl"
 
-list_of_ages = [20.,30.,40.,50.,60.,70.,80.,90.,100.,120.,140.,160.,180.,200.0]
-list_of_distances  = [136.0]
+list_of_ages = [20,30,40,50,60,70,80,90,100,120,140,160,180,200]
+list_of_distances  = [136]
 seed      = 0
 n_stars   = 50
 
@@ -23,14 +23,14 @@ def set_prior(age,distance):
 	priors = {
 	'age' : {
 		'family' : "TruncatedNormal",
-		'mu'    : age,
+		'mu'    : float(age),
 		'sigma' : 30.,
 		'lower' : 20,
 		'upper' : 200,
 		},
 	'distance' : {
 		'family' : 'Gaussian',
-		'mu' : distance,
+		'mu' : float(distance),
 		'sigma' : 10.
 		},
 	"distance_dispersion":{

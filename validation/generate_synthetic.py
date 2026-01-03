@@ -7,7 +7,7 @@ file_mlp_phot = "/home/jolivares/Repos/Huehueti/mlps/{0}/GP2_l9_s512/mlp.pkl".fo
 file_mlp_mass = "/home/jolivares/Repos/Huehueti/mlps/{0}/mTg_l7_s256/mlp.pkl".format(model)
 base_name = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 
-list_of_ages = [20.0,30.,40.,50.,60.,70.,80.,90.,100.,120.,140.,160.,180.200.]
+list_of_ages = [20.,30.,40.,50.,60.,70.,80.,90.,100.,120.,140.,160.,180.,200.]
 distance  = 136.0
 seed      = 0
 n_stars   = 50

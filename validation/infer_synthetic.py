@@ -1,6 +1,9 @@
 import sys
 import os
 
+sys.path.append("/home/jolivares/Repos/Huehueti/src/Huehueti/")
+from Huehueti import Huehueti
+
 dir_base       = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/"
 file_mlp_phot  = "/home/jolivares/Repos/Huehueti/mlps/PARSEC/GP2_l9_s512/mlp.pkl"
 file_mlp_mass  = "/home/jolivares/Repos/Huehueti/mlps/PARSEC/mTg_l7_s256/mlp.pkl"
@@ -57,13 +60,20 @@ def set_prior(age,distance):
 	}
 	return priors
 
+os.makedirs(dir_outputs,exist_ok=True)
+
 for age in list_of_ages:
 	print(20*"="+" {0:d} ".format(age) + 20*"=")
 	for distance in list_of_distances:
 		print(20*"+"+" {0:d} ".format(distance) + 20*"+")
 
-		file_data = dir_inputs + base_name.format(age,distance,n_stars,seed)+".csv"
-		dir_out   = dir_output + base_name.format(age,distance,n_stars,seed)+"/"
+		file_data = dir_inputs  + base_name.format(age,distance,n_stars,seed)+".csv"
+		dir_out   = dir_outputs + base_name.format(age,distance,n_stars,seed)+"/"
+		file_sts  = dir_out + "Global_statistics.csv"
+
+		if os.path.isfile(file_sts):
+			continue
+			
 		os.makedirs(dir_out,exist_ok=True)
 
 		hue = Huehueti(

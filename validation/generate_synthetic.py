@@ -2,7 +2,7 @@ import numpy as np
 from Amasijo import Amasijo
 
 model     = "PARSEC"
-dir_main  = "/home/jolivares/Repos/Huehueti/validation/synthetic/{0}/inputs/".format(model)
+dir_inputs    = "/home/jolivares/Repos/Huehueti/validation/synthetic/{0}/inputs/".format(model)
 file_mlp_phot = "/home/jolivares/Repos/Huehueti/mlps/{0}/GP2_l9_s512/mlp.pkl".format(model)
 file_mlp_mass = "/home/jolivares/Repos/Huehueti/mlps/{0}/mTg_l7_s256/mlp.pkl".format(model)
 base_name = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
@@ -11,7 +11,7 @@ list_of_ages = [20,30,40,50,60,70,80,90,100,120,140,160,180,200]
 distance  = 136
 seed      = 0
 n_stars   = 50
-theta_limits = [0.05,1.0]
+theta_limits = [1e-3,0.4]
 
 def phasespace_args(distance):
 	args = {
@@ -38,6 +38,9 @@ def isochrones_args(model,age,theta_limits):
 		"bands":["G","BP","RP","gP1", "rP1", "iP1", "zP1", "yP1","J", "H", "Ks"],
 		}
 	return args
+
+
+os.makedirs(dir_inputs,exist_ok=True)
 
 for age in list_of_ages:
 	file_data = dir_main + base_name.format(age,distance,n_stars,seed) + ".csv"

@@ -288,6 +288,12 @@ class Huehueti:
 		n_stars = photometry_mu.shape[0]
 		assert n_stars > 1,"The number of photometric sources is less than two!"
 
+		assert np.isfinite(astrometry_mu[astrometry_ix]).all(),"Error: NaN in astrometry_mu"
+		assert np.isfinite(astrometry_sd[astrometry_ix]).all(),"Error: NaN in astrometry_sd"
+
+		assert np.isfinite(photometry_mu[photometry_ix]).all(),"Error: NaN in photometry_mu"
+		assert np.isfinite(photometry_sd[photometry_ix]).all(),"Error: NaN in photometry_sd"
+
 		n_bands = len(self.photometric_names["values"])
 		identifiers = self.data.index.values
 

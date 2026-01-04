@@ -217,6 +217,7 @@ class Huehueti:
 
 		print("Summary of input data:")
 		print(df.describe())
+		sys.exit()
 
 		# If n_stars is provided, keep only the last n_stars rows.
 		if n_stars is not None:

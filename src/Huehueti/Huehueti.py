@@ -147,8 +147,6 @@ class Huehueti:
 		file_data: str, 
 		max_phot_uncertainty: dict,
 		fill_nan: str = "max",
-		n_stars: Optional[int] = None,
-		min_observed_bands: int = 3
 	) -> None:
 		"""
 		Read dataset CSV and perform preprocessing.
@@ -210,22 +208,14 @@ class Huehueti:
 
 		#---- Drop sources not fulfilling min_observed bands ------
 		df.dropna(axis=0,
-			thresh=min_observed_bands,
-			subset=self.observables["photometry"],
+			thresh=len(self.names_mu),
+			subset=self.names_mu,
 			inplace=True)
 		#--------------------------------------------------------------
 
 		print("Summary of input data:")
 		print(df.describe())
 		sys.exit()
-
-		# If n_stars is provided, keep only the last n_stars rows.
-		if n_stars is not None:
-			print(50*">")
-			print("Using only these sources:")
-			df = df.iloc[-n_stars:]
-			print(df.describe())
-			print(50*"<")
 
 		# Save processed data into the object
 		self.data = df

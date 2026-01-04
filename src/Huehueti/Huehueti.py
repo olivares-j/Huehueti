@@ -216,7 +216,7 @@ class Huehueti:
 
 		print("Summary of input data:")
 		print(df.describe())
-		sys.exit()
+		# sys.exit()
 
 		# Save processed data into the object
 		self.data = df

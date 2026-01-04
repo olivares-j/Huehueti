@@ -15,7 +15,7 @@ dir_inputs  = dir_base + "inputs/"
 dir_outputs = dir_base + "outputs/"
 base_name   = "{0}_filtering_value_{1}_error{2}"
 
-list_of_filters = [{"value":10.0,"error":1e-3},{"value":10.0,"error":5e-4}]
+list_of_filters = [{"value":6.0,"error":1e-3}]#,{"value":10.0,"error":5e-4}]
 
 observables = {
 "photometry":['g', 'bp', 'rp','gmag','rmag','imag','zmag','ymag','Jmag','Hmag','Kmag'],
@@ -74,7 +74,9 @@ for flt in list_of_filters:
 		file_mlp_phot=file_mlp_phot,
 		file_mlp_mass=file_mlp_mass,
 		observables=observables)
-	hue.load_data(file_data = file_data)
+	hue.load_data(
+		file_data = file_data,
+		max_phot_uncertainty=flt)
 	hue.setup(prior = priors)
 	# hue.plot_pgm()
 	hue.run(

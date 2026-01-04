@@ -198,14 +198,14 @@ class Huehueti:
 			df.loc[np.isnan(df[value]),error] = np.nan
 		#-------------------------------------------------------------------------
 
-		# Mask as missing bands with large uncertainties
-		for value,error in zip(self.observables["photometry"],
-			self.observables["photometry_error"]):
-			mask_missing = df.apply(lambda x : 
-				(x[error] > max_phot_uncertainty[error]) &
-				(x[value] > max_phot_uncertainty[value]),
-				axis=1)
-			df.loc[mask_missing,[value,error]] = np.nan
+		# # Mask as missing bands with large uncertainties
+		# for value,error in zip(self.observables["photometry"],
+		# 	self.observables["photometry_error"]):
+		# 	mask_missing = df.apply(lambda x : 
+		# 		(x[error] > max_phot_uncertainty[error]) &
+		# 		(x[value] > max_phot_uncertainty[value]),
+		# 		axis=1)
+		# 	df.loc[mask_missing,[value,error]] = np.nan
 
 		# #---- Drop sources not fulfilling min_observed bands ------
 		# df.dropna(axis=0,

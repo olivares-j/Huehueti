@@ -4,7 +4,7 @@ import os
 sys.path.append("/home/jolivares/Repos/Huehueti/src/Huehueti/")
 from Huehueti import Huehueti
 
-system = "Pleiades"
+system = "Pleiades_test"
 
 dir_base       = "/home/jolivares/Repos/Huehueti/validation/real/"
 file_mlp_phot  = "/home/jolivares/Repos/Huehueti/mlps/PARSEC/GP2_l9_s512/mlp.pkl"

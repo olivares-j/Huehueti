@@ -15,13 +15,12 @@ dir_inputs  = dir_base + "inputs/"
 dir_outputs = dir_base + "outputs/"
 base_name   = "{0}_filtering_value_{1}_error{2}"
 
-list_of_filters = [{"value":10.0,"error":1e-3},{"value":10.0,"error":1e-3}]
+list_of_filters = [{"value":10.0,"error":1e-3},{"value":10.0,"error":5e-4}]
 
 observables = {
 "photometry":['g', 'bp', 'rp','gmag','rmag','imag','zmag','ymag','Jmag','Hmag','Kmag'],
 "photometry_error":['g_error', 'bp_error', 'rp_error','e_gmag','e_rmag','e_imag','e_zmag','e_ymag','e_Jmag','e_Hmag','e_Kmag'],
 }
-
 
 priors = {
 	'age' : {
@@ -76,7 +75,7 @@ for flt in list_of_filters:
 		file_mlp_mass=file_mlp_mass,
 		observables=observables)
 	hue.load_data(file_data = file_data)
-	hue.setup(prior = set_prior(age,distance))
+	hue.setup(prior = priors)
 	# hue.plot_pgm()
 	hue.run(
 		init_iters=int(8e4),
@@ -91,5 +90,5 @@ for flt in list_of_filters:
 	hue.plot_posterior()
 	hue.plot_cpp()
 	hue.plot_predictions()
-	hue.plot_cmd(cmd={"magnitude":"G","color":["G","RP"]})
+	hue.plot_cmd(cmd={"magnitude":"g","color":["g","rp"]})
 	hue.save_statistics()

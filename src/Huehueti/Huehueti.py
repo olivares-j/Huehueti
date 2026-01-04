@@ -145,9 +145,9 @@ class Huehueti:
 
 	def load_data(self, 
 		file_data: str, 
+		max_phot_uncertainty: dict,
 		fill_nan: str = "max",
 		n_stars: Optional[int] = None,
-		max_phot_uncertainty: dict = {"value":10.0,"error":1e-3},
 		min_observed_bands: int = 3
 	) -> None:
 		"""
@@ -203,8 +203,8 @@ class Huehueti:
 		for value,error in zip(self.observables["photometry"],
 			self.observables["photometry_error"]):
 			mask_missing = df.apply(lambda x : 
-				(x[error] > max_phot_uncertainty["error"]) &
-				(x[value] > max_phot_uncertainty["value"]),
+				(x[error] > max_phot_uncertainty[error]) &
+				(x[value] > max_phot_uncertainty[value]),
 				axis=1)
 			df.loc[mask_missing,[value,error]] = np.nan
 
@@ -1124,13 +1124,40 @@ if __name__ == "__main__":
 		},
 	}
 
+	filtering = {
+	'G':10.0,
+	'e_G':1e-3,
+	'BP':10.0,
+	'e_BP':1e-3,
+	'RP':10.0,
+	'e_RP':1e-3,
+	'gP1':10.0,
+	'e_gP1':1e-3,
+	'rP1':10.0,
+	'e_rP1':1e-3,
+	'iP1':10.0,
+	'e_iP1':1e-3,
+	'zP1':10.0,
+	'e_zP1':1e-3,
+	'yP1':10.0,
+	'e_yP1':1e-3,
+	'J':10.0,
+	'e_J':1e-3,
+	'H':10.0,
+	'e_H':1e-3,
+	'Ks':10.0,
+	'e_Ks':1e-3
+	}
+
 
 	hue = Huehueti(
 		dir_out = dir_out, 
 		file_mlp_phot=file_mlp_phot,
 		file_mlp_mass=file_mlp_mass,
 		observables=observables)
-	hue.load_data(file_data = file_data)
+	hue.load_data(
+		file_data = file_data,
+		max_phot_uncertainty=filtering)
 	hue.setup(prior = priors)
 	# hue.plot_pgm()
 	hue.run(

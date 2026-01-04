@@ -13,9 +13,22 @@ file_mlp_mass  = "/home/jolivares/Repos/Huehueti/mlps/PARSEC/mTg_l7_s256/mlp.pkl
 
 dir_inputs  = dir_base + "inputs/"
 dir_outputs = dir_base + "outputs/"
-base_name   = "{0}_filtering_value_{1}_error{2}"
+base_name   = "{0}"
 
-list_of_filters = [{"value":6.0,"error":1e-3}]#,{"value":10.0,"error":5e-4}]
+list_of_filters = [
+	{'g':10.0,'g_error':1e-3,
+	'bp':10.0,'bp_error':1e-3,
+	'rp':10.0,'rp_error':1e-3,
+	'gmag':8.0,'e_gmag':5e-3,
+	'rmag':8.0,'e_rmag':5e-3,
+	'imag':8.0,'e_imag':5e-3,
+	'zmag':8.0,'e_zmag':5e-3,
+	'ymag':8.0,'e_ymag':5e-3,
+	'Jmag':7.0,'e_Jmag':3e-2,
+	'Hmag':7.0,'e_Hmag':3e-2,
+	'Kmag':7.0,'e_Kmag':3e-2
+	}
+]
 
 observables = {
 "photometry":['g', 'bp', 'rp','gmag','rmag','imag','zmag','ymag','Jmag','Hmag','Kmag'],
@@ -61,7 +74,7 @@ priors = {
 
 for flt in list_of_filters:
 	file_data = dir_inputs  + "{0}.csv".format(system)
-	dir_out   = dir_outputs + base_name.format(system,flt["value"],flt["error"])+"/"
+	dir_out   = dir_outputs + base_name.format(system)+"/"
 	file_sts  = dir_out + "Global_statistics.csv"
 
 	if os.path.isfile(file_sts):

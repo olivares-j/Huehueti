@@ -208,7 +208,7 @@ class Huehueti:
 
 		#---- Drop sources not fulfilling min_observed bands ------
 		df.dropna(axis=0,
-			thresh=len(self.names_mu),
+			thresh=4,
 			subset=self.names_mu,
 			inplace=True)
 		#--------------------------------------------------------------

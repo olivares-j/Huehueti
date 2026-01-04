@@ -147,6 +147,7 @@ class Huehueti:
 		file_data: str, 
 		max_phot_uncertainty: dict,
 		fill_nan: str = "max",
+		min_observed_bands: int = 5
 	) -> None:
 		"""
 		Read dataset CSV and perform preprocessing.
@@ -206,12 +207,12 @@ class Huehueti:
 				axis=1)
 			df.loc[mask_missing,[value,error]] = np.nan
 
-		# #---- Drop sources not fulfilling min_observed bands ------
-		# df.dropna(axis=0,
-		# 	thresh=4,
-		# 	subset=self.names_mu,
-		# 	inplace=True)
-		# #--------------------------------------------------------------
+		#---- Drop sources not fulfilling min_observed bands ------
+		df.dropna(axis=0,
+			thresh=min_observed_bands,
+			subset=self.observables["photometry"],
+			inplace=True)
+		#--------------------------------------------------------------
 
 		print("Summary of input data:")
 		print(df.describe())

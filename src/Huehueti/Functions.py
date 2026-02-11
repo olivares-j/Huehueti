@@ -73,7 +73,7 @@ def absolute_to_apparent(M, distance,n_bands):
         M : [1]
         m : [1] 
     """
-    distance_v = pt.stack([distance for _ in range(n_bands)], axis=1)
+    distance_v = pt.stack([distance for _ in range(M.shape[1])], axis=1)
     return M + 5.*pt.log10(distance_v) - 5.0
 
 def distance2parallax(distance):

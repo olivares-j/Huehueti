@@ -5,22 +5,28 @@ sys.path.append("/home/jolivares/Repos/Huehueti/src/Huehueti/")
 from Huehueti import Huehueti
 
 dir_base       = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/"
-file_mlp_phot  = "/home/jolivares/Repos/Huehueti/mlps/PARSEC/GP2_l9_s512/mlp.pkl"
-file_mlp_mass  = "/home/jolivares/Repos/Huehueti/mlps/PARSEC/mTg_l7_s256/mlp.pkl"
+file_mlp_phot  = "/home/jolivares/Models/PARSEC/Gaia_EDR3_15-400Myr/MLPs/Phot_l7_s512/mlp.pkl"
+file_mlp_teff  = "/home/jolivares/Models/PARSEC/Gaia_EDR3_15-400Myr/MLPs/Teff_l16_s512/mlp.pkl"
 
-list_of_ages = [20,30,40,50,60,70,80,90,100,120,140,160,180,200]
-list_of_distances  = [136]
+list_of_ages = list(range(20,420,20))
+list_of_distances  = [50]
+n_stars   = 10
 seed      = 0
-n_stars   = 50
+
 
 dir_inputs  = dir_base + "inputs/"
 dir_outputs = dir_base + "outputs/"
 base_name   = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 
+absolute_photometry = ['Gmag', 'G_BPmag', 'G_RPmag']
 observables = {
-"photometry":['G', 'BP', 'RP','gP1','rP1','iP1','zP1','yP1','J','H','Ks'],
-"photometry_error":['e_G', 'e_BP', 'e_RP','e_gP1','e_rP1','e_iP1','e_zP1','e_yP1','e_J','e_H','e_Ks'],
+"photometry":['phot_g_mean_mag', 'phot_bp_mean_mag', 'phot_rp_mean_mag'],
+"photometry_error":['phot_g_mean_mag_error', 'phot_bp_mean_mag_error', 'phot_rp_mean_mag_error'],
 }
+
+parameters = {"age":None}
+hyperparameters = {"distance":"distance"}
+
 
 def set_prior(age,distance):
 	priors = {
@@ -28,8 +34,8 @@ def set_prior(age,distance):
 		'family' : "TruncatedNormal",
 		'mu'    : float(age),
 		'sigma' : 30.,
-		'lower' : 20,
-		'upper' : 200,
+		'lower' : 15,
+		'upper' : 400,
 		},
 	'distance' : {
 		'family' : 'Gaussian',
@@ -77,25 +83,38 @@ for age in list_of_ages:
 		os.makedirs(dir_out,exist_ok=True)
 
 		hue = Huehueti(
-			dir_out = dir_out, 
-			file_mlp_phot=file_mlp_phot,
-			file_mlp_mass=file_mlp_mass,
-			observables=observables)
-		hue.load_data(file_data = file_data)
-		hue.setup(prior = set_prior(age,distance))
-		# hue.plot_pgm()
+		dir_out = dir_out, 
+		file_mlp_phot=file_mlp_phot,
+		file_mlp_teff=file_mlp_teff,
+		observables=observables,
+		absolute_photometry=absolute_photometry,
+		hyperparameters = hyperparameters,
+		)
+		hue.load_data(
+		file_data = file_data
+		)
+		hue.setup(
+		parameters = parameters, 
+		prior = prior
+		)
 		hue.run(
-			init_iters=int(8e4),
-			init_refine=False,
-			nuts_sampler="advi",
-			tuning_iters=int(5e4),
-			sample_iters=2000,
-			prior_iters=2000)
+		init_method="advi",
+		# init_method="fullrank_advi",
+		init_iters=int(5e5),
+		# nuts_sampler="advi",
+		# nuts_sampler="fullrank_advi",
+		nuts_sampler="numpyro",
+		# tuning_iters=int(1e4),
+		tuning_iters=2000,
+		sample_iters=2000,
+		prior_iters=2000,
+		chains=4,
+		cores=4)
 		hue.load_trace()
 		hue.convergence()
 		hue.plot_chains()
 		hue.plot_posterior()
 		hue.plot_cpp()
 		hue.plot_predictions()
-		hue.plot_cmd(cmd={"magnitude":"G","color":["G","RP"]})
+		hue.plot_cmd(cmd={"magnitude":"phot_g_mean_mag","color":["phot_g_mean_mag","phot_rp_mean_mag"]})
 		hue.save_statistics()

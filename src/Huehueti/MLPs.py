@@ -7,6 +7,7 @@ from a dill/pickle file and the forward pass is implemented using PyTensor
 (pytensor) tensors so the outputs can be used inside PyMC models.
 """
 import os
+import sys
 from pickle import load
 import numpy as np
 import pytensor.tensor as pt
@@ -133,9 +134,9 @@ class MLP_phot:
 				self.targets = mlp["targets"]
 				self.phot_min = mlp["phot_min"]
 				self.age_domain  = mlp["age_domain"]
-				self.theta_domain = mlp["par_domain"]
+				self.mass_domain = mlp["mass_domain"]
 
-			assert num_layers == 9, "Error: mismatch in number of layers!"
+			assert num_layers == 7, "Error: mismatch in number of layers!"
 
 		except FileNotFoundError as error:
 			# Provide a clear error for the user if file missing
@@ -159,10 +160,10 @@ class MLP_phot:
 			self.dff_val = self.max_val - self.min_val
 
 		# Print a small summary for user awareness when instantiating the MLP.
-		print("Age domain: [{0:2.1f},{1:2.1f}]".format(*self.age_domain))
-		print("Theta domain: [{0:2.2f},{1:2.3f}]".format(*self.theta_domain))
+		print("Age domain:  [{0:2.1f},{1:2.1f}]".format(*self.age_domain))
+		print("Mass domain: [{0:2.2f},{1:2.3f}]".format(*self.mass_domain))
 
-	def __call__(self, age, theta, n_stars):
+	def __call__(self, age, mass, n_stars):
 		"""Compute NN predictions for given age and theta grid.
 
 		Returns:
@@ -178,7 +179,7 @@ class MLP_phot:
 		"""
 		# Stack age and tiled age with theta to form input columns:
 		# amt has shape (2, n_stars) using pytensor operations.
-		amt = pt.stack([pt.tile(age, n_stars),theta])
+		amt = pt.stack([pt.tile(age, n_stars), mass])
 
 		# Apply Box-Cox transform: (x^lambda - 1)/lambda, and log if lambda==0.
 		# The comparison and switch is done elementwise using pytensor operations.
@@ -197,17 +198,18 @@ class MLP_phot:
 		A5  = relu(pt.dot(A4, self.W[4])  + self.b[4])
 		A6  = relu(pt.dot(A5, self.W[5])  + self.b[5])
 		A7  = relu(pt.dot(A6, self.W[6])  + self.b[6])
-		A8  = relu(pt.dot(A7, self.W[7])  + self.b[7])
-		A9  = relu(pt.dot(A8, self.W[8])  + self.b[8])
+		# A8  = relu(pt.dot(A7, self.W[7])  + self.b[7])
+		# A9  = relu(pt.dot(A8, self.W[8])  + self.b[8])
 		# A10 = relu(pt.dot(A9, self.W[9])  + self.b[9])
 		# A11 = relu(pt.dot(A10, self.W[10])  + self.b[10])
 		# A12 = relu(pt.dot(A11, self.W[11])  + self.b[11])
+		# A13 = relu(pt.dot(A12, self.W[12])  + self.b[12])
 		# Final linear output (no activation)
-		targets = pt.dot(A9, self.W[9]) + self.b[9]
+		targets = pt.dot(A7, self.W[7]) + self.b[7]
 
 		return targets
 
-class MLP_mass:
+class MLP_teff:
 	"""Wrapper around a pretrained multilayer perceptron.
 
 	Responsibilities:
@@ -248,10 +250,9 @@ class MLP_mass:
 				num_layers = mlp["num_layers"]
 				self.targets = mlp["targets"]
 				self.age_domain  = mlp["age_domain"]
-				# theta (parameter) domain used by the MLP
-				self.theta_domain = mlp["par_domain"]
+				self.mass_domain = mlp["mass_domain"]
 
-			assert num_layers == 7, "Error: mismatch in number of layers!"
+			assert num_layers == 16, "Error: mismatch in number of layers!"
 
 		except FileNotFoundError as error:
 			# Provide a clear error for the user if file missing
@@ -276,9 +277,9 @@ class MLP_mass:
 
 		# Print a small summary for user awareness when instantiating the MLP.
 		print("Age domain: [{0:2.1f},{1:2.1f}]".format(*self.age_domain))
-		print("Theta domain: [{0:2.2f},{1:2.3f}]".format(*self.theta_domain))
+		print("Mass domain: [{0:2.2f},{1:2.3f}]".format(*self.mass_domain))
 
-	def __call__(self, age, theta, n_stars):
+	def __call__(self, age, mass, n_stars):
 		"""Compute NN predictions for given age and theta grid.
 
 		Returns:
@@ -294,7 +295,7 @@ class MLP_mass:
 		"""
 		# Stack age and tiled age with theta to form input columns:
 		# amt has shape (2, n_stars) using pytensor operations.
-		amt = pt.stack([pt.tile(age, n_stars),theta])
+		amt = pt.stack([pt.tile(age, n_stars),mass])
 
 		# Apply Box-Cox transform: (x^lambda - 1)/lambda, and log if lambda==0.
 		# The comparison and switch is done elementwise using pytensor operations.
@@ -313,17 +314,17 @@ class MLP_mass:
 		A5  = relu(pt.dot(A4, self.W[4])  + self.b[4])
 		A6  = relu(pt.dot(A5, self.W[5])  + self.b[5])
 		A7  = relu(pt.dot(A6, self.W[6])  + self.b[6])
-		# A8  = relu(pt.dot(A7, self.W[7])  + self.b[7])
-		# A9  = relu(pt.dot(A8, self.W[8])  + self.b[8])
-		# A10 = relu(pt.dot(A9, self.W[9])  + self.b[9])
-		# A11 = relu(pt.dot(A10,self.W[10]) + self.b[10])
-		# A12 = relu(pt.dot(A11,self.W[11]) + self.b[11])
-		# A13 = relu(pt.dot(A12,self.W[12]) + self.b[12])
-		# A14 = relu(pt.dot(A13,self.W[13]) + self.b[13])
-		# A15 = relu(pt.dot(A14,self.W[14]) + self.b[14])
-		# A16 = relu(pt.dot(A15,self.W[15]) + self.b[15])
+		A8  = relu(pt.dot(A7, self.W[7])  + self.b[7])
+		A9  = relu(pt.dot(A8, self.W[8])  + self.b[8])
+		A10 = relu(pt.dot(A9, self.W[9])  + self.b[9])
+		A11 = relu(pt.dot(A10,self.W[10]) + self.b[10])
+		A12 = relu(pt.dot(A11,self.W[11]) + self.b[11])
+		A13 = relu(pt.dot(A12,self.W[12]) + self.b[12])
+		A14 = relu(pt.dot(A13,self.W[13]) + self.b[13])
+		A15 = relu(pt.dot(A14,self.W[14]) + self.b[14])
+		A16 = relu(pt.dot(A15,self.W[15]) + self.b[15])
 		# Final linear output (no activation) gives targets for mass + photometry bands
-		targets = pt.dot(A7, self.W[7]) + self.b[7]
+		targets = pt.dot(A16, self.W[16]) + self.b[16]
 
 		return targets
 
@@ -332,46 +333,84 @@ class MLP_mass:
 # directly. It is not required for the library functionality and will only run
 # in interactive/script mode.
 if __name__ == "__main__":
+	import bisect
 
-	dir_base = "/home/jolivares/Repos/Huehueti/"
+	dir_base = "/home/jolivares/Models/PARSEC/Gaia_EDR3_15-400Myr/"
 
-	file_iso = dir_base + "data/parametrizations/parametrized_max_label_1_PARSEC_20-200Myr_GDR3+PanSTARRS+2MASS.csv"
-	file_mlp_phot = dir_base + "mlps/PARSEC/GP2_l9_s512/mlp.pkl"
-	file_mlp_mass = dir_base + "mlps/PARSEC/mTg_l7_s256/mlp.pkl"
+	file_iso      = dir_base + "output.dat"
+	file_mlp_phot = dir_base + "MLPs/Phot_l7_s512/mlp.pkl"
+	file_mlp_teff = dir_base + "MLPs/Teff_l16_s512/mlp.pkl"
 
 	mlp_phot = MLP_phot(file_mlp=file_mlp_phot)
-	mlp_mass = MLP_mass(file_mlp=file_mlp_mass)
+	mlp_teff = MLP_teff(file_mlp=file_mlp_teff)
 
 	# Example: load an isochrone from a parametrized CSV and overlay predicted photometry
-	age = 50.
+	age = 120.
+	max_label = 1
 
-	df = pn.read_csv(file_iso)
-	df_iso = df.groupby("age_Myr").get_group(age).copy()
+	df_iso = pn.read_csv(file_iso,
+					skiprows=13,
+					delimiter=r"\s+",
+					header="infer",
+					comment="#")
+	df_iso = df_iso.loc[df_iso["label"]<= max_label]
+	df_iso["age"] = np.pow(10.,df_iso["logAge"])/1.0e6
+	df_iso["Teff"] = np.pow(10.,df_iso["logTe"])
+	dfg_iso = df_iso.groupby("age")
+	ages = sorted(list(dfg_iso.groups.keys()))
+	index = bisect.bisect(ages, age)
+	age = ages[index]
+	df_iso = dfg_iso.get_group(age)
 
-	theta  = df_iso["parameter"].to_numpy()
-	n_stars = len(theta) 
+	mass  = df_iso["Mini"].to_numpy()
+	n_stars = len(mass)
 
-	absolute_photometry = mlp_phot(age,theta,n_stars)
-	mass_logTe_logg = mlp_mass(age,theta,n_stars)
-	df_phot = pn.DataFrame(data=absolute_photometry.eval(),columns=mlp_phot.targets)
-	df_mass = pn.DataFrame(data=mass_logTe_logg.eval(),columns=mlp_mass.targets)
-	df_prd = df_phot.join(df_mass)
-	df_prd["parameter"] = theta
+	#------------ Mass ------------------------------
+	mass = np.linspace(
+		start=mlp_phot.mass_domain[0],
+		stop=mlp_phot.mass_domain[1],
+		num=n_stars)
+	#--------------------------------------------------
+
+	teff = mlp_teff(age,mass,n_stars)
+	phot = mlp_phot(age,mass,n_stars)
+
+	df_prd = pn.DataFrame(data=phot.eval(),columns=mlp_phot.targets)
+	df_prd["Mini"] = mass
+	df_prd["Teff"] = teff.eval().flatten()
 
 	# Simple diagnostic plot to visually compare trained MLP predictions with input isochrone
-	for target in sum([mlp_phot.targets,mlp_mass.targets],[]):
+	for target in mlp_phot.targets:
 		plt.figure(0)
 		ax = sns.scatterplot(data=df_iso,
-							x="parameter",y=target,
+							x="Mini",y=target,
 							legend=True,
 							zorder=0)
 		ax = sns.lineplot(data=df_prd,
-							x="parameter",y=target,
+							x="Mini",y=target,
 							legend=True,
 							sort=False,
 							zorder=1,
 							ax=ax)
 
-		ax.set_xlabel("Theta")
+		ax.set_xlabel("Mini")
 		ax.set_ylabel(target)
+		plt.show()
+
+	for target in mlp_phot.targets:
+		plt.figure(0)
+		ax = sns.scatterplot(data=df_iso,
+							x="Teff",y=target,
+							legend=True,
+							zorder=0)
+		ax = sns.lineplot(data=df_prd,
+							x="Teff",y=target,
+							legend=True,
+							sort=False,
+							zorder=1,
+							ax=ax)
+
+		ax.set_xlabel("Teff [K]")
+		ax.set_ylabel(target)
+		ax.invert_yaxis()
 		plt.show()

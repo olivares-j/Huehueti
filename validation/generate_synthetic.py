@@ -1,17 +1,21 @@
+import os
 import numpy as np
 from Amasijo import Amasijo
 
-model     = "PARSEC"
+model         = "PARSEC"
 dir_inputs    = "/home/jolivares/Repos/Huehueti/validation/synthetic/{0}/inputs/".format(model)
-file_mlp_phot = "/home/jolivares/Repos/Huehueti/mlps/{0}/GP2_l9_s512/mlp.pkl".format(model)
-file_mlp_mass = "/home/jolivares/Repos/Huehueti/mlps/{0}/mTg_l7_s256/mlp.pkl".format(model)
+dir_mlps      = "/home/jolivares/Models/PARSEC/Gaia_EDR3_15-400Myr/MLPs/"
+file_mlp_phot = dir_mlps+"Phot_l7_s512/mlp.pkl"
+file_mlp_teff = dir_mlps+"Teff_l16_s512/mlp.pkl"
+file_mlp_logg = dir_mlps+"Logg_l13_s256/mlp.pkl"
 base_name = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 
-list_of_ages = [20,30,40,50,60,70,80,90,100,120,140,160,180,200]
-distance  = 136
+list_of_ages = list(range(20,420,20))
+list_of_distances  = [50,100,150,200]
+n_stars   = 10
 seed      = 0
-n_stars   = 50
-theta_limits = [1e-3,0.4]
+
+mass_limits = [0.1,4.5]
 
 def phasespace_args(distance):
 	args = {
@@ -26,16 +30,22 @@ def phasespace_args(distance):
 				}}
 	return args
 
-def isochrones_args(model,age,theta_limits):
+def isochrones_args(model,age,mass_limits):
 	args = {
 		"model":model,
 		"age": float(age),
+		"MIST_args":{
+			"mass_limits":mass_limits,
+			"metallicity":0.012,
+			"Av": 0.0
+			},
 		"PARSEC_args":{
 				"file_mlp_phot":file_mlp_phot,
-				"file_mlp_mass":file_mlp_mass,
-				"theta_limits":theta_limits
+				"file_mlp_teff":file_mlp_teff,
+				"file_mlp_logg":file_mlp_logg,
+				"mass_limits":mass_limits,
 				},          
-		"bands":["G","BP","RP","gP1", "rP1", "iP1", "zP1", "yP1","J", "H", "Ks"],
+		"bands":["G","BP","RP"]#,"gP1", "rP1", "iP1", "zP1", "yP1","J", "H", "Ks"],
 		}
 	return args
 
@@ -43,11 +53,13 @@ def isochrones_args(model,age,theta_limits):
 os.makedirs(dir_inputs,exist_ok=True)
 
 for age in list_of_ages:
-	file_data = dir_main + base_name.format(age,distance,n_stars,seed) + ".csv"
-	file_plot = dir_main + base_name.format(age,distance,n_stars,seed) + ".pdf"
-	ama = Amasijo(
-				phasespace_args=phasespace_args(distance),
-				isochrones_args=isochrones_args(model,age,theta_limits),
-				seed=seed)
-	ama.generate_cluster(file_data,n_stars=n_stars,angular_correlations=None)
-	ama.plot_cluster(file_plot=file_plot)
+	for distance in list_of_distances:
+		file_data = dir_inputs + base_name.format(age,distance,n_stars,seed) + ".csv"
+		file_plot = dir_inputs + base_name.format(age,distance,n_stars,seed) + ".pdf"
+
+		ama = Amasijo(
+					phasespace_args=phasespace_args(distance),
+					isochrones_args=isochrones_args(model,age,mass_limits),
+					seed=seed)
+		ama.generate_cluster(file_data,n_stars=n_stars,angular_correlations=None)
+		ama.plot_cluster(file_plot=file_plot)

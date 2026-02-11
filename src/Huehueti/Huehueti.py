@@ -19,9 +19,8 @@ from matplotlib.backends.backend_pdf import PdfPages
 #------------------------------------------------------------------
 
 # Local model/utility imports.
-from Models import Model_v0,Model_v1
-from MLPs import MLP_phot, MLP_mass
-from Functions import absolute_to_apparent, apparent_to_absolute
+from Models import absolute_to_apparent,Model_v0
+from MLPs import MLP_phot, MLP_teff
 
 # Configure pandas display to show all columns when printing summaries.
 pn.set_option('display.max_columns', None)
@@ -43,13 +42,16 @@ class Huehueti:
 	def __init__(self,
 		dir_out: str,
 		file_mlp_phot: str,
-		file_mlp_mass: str,
+		file_mlp_teff: str,
 		observables: dict,
+		hyperparameters: dict,
+		absolute_photometry: list
 	) -> None:
 		# Output directory and path to MLP file
 		self.dir_out = dir_out
 		self.file_mlp_phot = file_mlp_phot
-		self.file_mlp_mass = file_mlp_mass
+		self.file_mlp_teff = file_mlp_teff
+		self.absolute_photometry = absolute_photometry
 
 		# File paths for common outputs produced by the class methods.
 		# These are constructed relative to dir_out.
@@ -58,7 +60,7 @@ class Huehueti:
 		self.file_chains        = self.dir_out+"/Chains.nc"
 		self.file_start         = self.dir_out+"/Initialization.pkl"
 		self.file_prior         = self.dir_out+"/Prior.nc"
-		self.file_advi_loss     = self.dir_out+"/Initializations.png"
+		self.file_vi_loss       = self.dir_out+"/Initializations.png"
 		self.file_init_true     = self.dir_out+"/initial_true.csv"
 		self.file_trace_globals = self.dir_out+"/Global_traces.pdf"
 		self.file_trace_sources = self.dir_out+"/Sources_traces.pdf"
@@ -73,12 +75,16 @@ class Huehueti:
 		# A list containing every filter and its uncertainty and some metadata.
 		default_observables = {
 		"identifiers":"source_id",
-		"absolute":['Gmag', 'G_BPmag', 'G_RPmag', 'gP1mag', 'rP1mag', 'iP1mag', 'zP1mag','yP1mag', 'Jmag', 'Hmag', 'Ksmag'],
-		"photometry":['g', 'bp', 'rp','gmag','rmag','imag','zmag','ymag','Jmag','Hmag','Kmag'],
-		"photometry_error":['g_error','bp_error','rp_error', 'e_gmag', 'e_rmag', 'e_imag', 'e_zmag', 'e_ymag', 'e_Jmag', 'e_Hmag', 'e_Kmag' ],
-		"astrometry":["parallax"],
-		"astrometry_error":["parallax_error"],
-		"astrometry_units":["[mas]"]
+		"photometry":['phot_g_mean_mag', 'phot_bp_mean_mag', 'phot_rp_mean_mag'],
+		"photometry_error":['phot_g_mean_mag_error', 'phot_bp_mean_mag_error', 'phot_rp_mean_mag_error'],
+		# "astrometry":["parallax"],
+		# "astrometry_error":["parallax_error"],
+		# "spectroscopy":["teff"],
+		# "spectroscopy_error":["teff_error"]
+		"astrometry":[],
+		"astrometry_error":[],
+		"spectroscopy":[],
+		"spectroscopy_error":[]
 		}
 
 		for arg,val in default_observables.items():
@@ -86,9 +92,11 @@ class Huehueti:
 				observables[arg] = val
 
 		self.observables = observables
-		print("The following observable will be used:")
+		print("The following observables will be used:")
 		for k,v in self.observables.items():
 			print("\t{0} : {1}".format(k,v))
+
+		self.hyperparameters = hyperparameters
 
 		# Primary identifier column name
 		self.id_name = observables["identifiers"]
@@ -96,17 +104,27 @@ class Huehueti:
 		# Names expected for mean values and uncertainties used throughout the code.
 		self.names_mu = sum([
 			observables["astrometry"],
-			observables["photometry"]
+			observables["photometry"],
+			observables["spectroscopy"],
 			],[])
 		self.names_sd = sum([
 			observables["astrometry_error"],
-			observables["photometry_error"]
+			observables["photometry_error"],
+			observables["spectroscopy_error"]
 			],[])
+
+		self.observables_names = sum([
+			self.names_mu,
+			self.names_sd,
+			],[])
+
 		self.columns = sum([
 			[self.id_name],
-			self.names_mu,
-			self.names_sd
+			self.observables_names,
+			list(hyperparameters.values())
 			],[])
+
+		
 
 		# Helpers grouping photometric and astrometric names into dicts for convenience.
 		self.photometric_names = {
@@ -115,6 +133,9 @@ class Huehueti:
 		self.astrometric_names = {
 			"values":self.observables["astrometry"],
 			"errors":self.observables["astrometry_error"]}
+		self.spectroscopic_names = {
+			"values":self.observables["spectroscopy"],
+			"errors":self.observables["spectroscopy_error"]}
 
 	def _isochrone_photometric_limits(self, distance: float) -> np.ndarray:
 		"""
@@ -144,10 +165,8 @@ class Huehueti:
 			return phot_lim
 
 	def load_data(self, 
-		file_data: str, 
-		max_phot_uncertainty: dict,
+		file_data: str,
 		fill_nan: str = "max",
-		min_observed_bands: int = 5
 	) -> None:
 		"""
 		Read dataset CSV and perform preprocessing.
@@ -158,8 +177,8 @@ class Huehueti:
 			Path to input CSV file containing the columns defined in self.columns.
 		fill_nan : str, optional
 			Method to fill missing error values ("max" or "mean"). Default "max".
-		n_stars : int or None
-			If set, only keep the last n_stars rows (the code uses iloc[-n_stars:]).
+		source_parameters : dictionary
+			If set, mapping from parameters to columns in file_data.
 		"""
 		assert fill_nan in ["max","mean"],"Error: fill_nan can only be max or mean"
 
@@ -169,11 +188,15 @@ class Huehueti:
 		# Use the source_id as the DataFrame index.
 		df.set_index("source_id",inplace=True)
 		#--------------------------------------------------
+
+		for key,value in self.hyperparameters.items():
+			df.rename(mapper={value:key},inplace=True)
 		
 		#-------- Filter out sources brighter than limit ------------------------------------------------
 		# Estimate an average distance from parallax to compute an apparent magnitude
 		# limit for rejection. 1000/parallax to convert mas->pc (parallax must be in mas).
-		phot_lim = self._isochrone_photometric_limits(distance=np.mean(1000/df["parallax"])).to_numpy()
+		distance = df["distance"].mean() if "distance" in df.columns else np.mean(1000/df["parallax"])
+		phot_lim = self._isochrone_photometric_limits(distance=distance).to_numpy()
 
 		# For each star, keep it if ALL photometric bands are fainter than the phot_lim
 		# or if the measurement is missing (NaN). The mask_valid ends up boolean per-source.
@@ -198,28 +221,15 @@ class Huehueti:
 			df.loc[np.isnan(df[value]),error] = np.nan
 		#-------------------------------------------------------------------------
 
-		# # Mask as missing bands with large uncertainties
-		# for value,error in zip(self.observables["photometry"],
-		# 	self.observables["photometry_error"]):
-		# 	mask_missing = df.apply(lambda x : 
-		# 		(x[error] > max_phot_uncertainty[error]) &
-		# 		(x[value] > max_phot_uncertainty[value]),
-		# 		axis=1)
-		# 	df.loc[mask_missing,[value,error]] = np.nan
-
-		# #---- Drop sources not fulfilling min_observed bands ------
-		# df.dropna(axis=0,
-		# 	thresh=min_observed_bands,
-		# 	subset=self.observables["photometry"],
-		# 	inplace=True)
-		# #--------------------------------------------------------------
+		# Save processed data into the object
+		self.data = df.loc[:,self.observables_names]
+		self.df_hyp = df.loc[:,self.hyperparameters.keys()]
 
 		print("Summary of input data:")
-		print(df.describe())
-		# sys.exit()
+		print(self.data.describe())
 
-		# Save processed data into the object
-		self.data = df
+		print("Summary of input hyperparameters:")
+		print(self.df_hyp.describe())
 
 		#----- Track ID -----------------
 		self.ID = self.data.index.values
@@ -244,73 +254,129 @@ class Huehueti:
 		#------------------------------------------------------
 
 	def setup(self,
-		prior: Dict[str, Any],
-		starting_points: Optional[Any] = None,
+		parameters: Dict[str,float],
+		prior: Dict[str, Any]
 	) -> None:
 		"""
 		Initialize the MLP and probabilistic model.
 
 		Parameters
 		----------
+		parameters: dict,
+			Global parameters to be set or inferred (None)
 		prior : dict
 			Prior specification passed to Model_v0.
 		starting_points : optional initial values (currently unused)
 		"""
-		#----------------- Initialize NNs ----------------
+		#----------------- Initialize NNs -------------------
 		self.mlp_phot = MLP_phot(file_mlp=self.file_mlp_phot)
-		self.mlp_mass = MLP_mass(file_mlp=self.file_mlp_mass)
-		#--------------------------------------------------
+		self.mlp_teff = MLP_teff(file_mlp=self.file_mlp_teff)
+		#----------------------------------------------------
 
-		assert self.mlp_phot.targets == self.observables["absolute"],KeyError("Absolute bands do not correspond to PARSEC mlp ones")
+		assert self.mlp_phot.targets == self.absolute_photometry,KeyError("Absolute bands do not correspond to PARSEC mlp ones")
+		assert "age" in parameters.keys(), KeyError("The age parameter needs to be set either to float value or None to infer it")
 
-		#------------ Prior verification ------------------------
-		assert "age"  in prior.keys(), KeyError('Please, provide a prior for the age')
-		assert "distance" in prior.keys(), KeyError('Please, provide a prior for distance')
+		#------------- Parameters and Prior verification --------------------
+		if parameters["age"] is None:
+			assert "age"  in prior.keys(), KeyError('Please, provide a prior for the age parameter')
+			assert prior["age"]["family"]  in ["TruncatedNormal","Uniform"], KeyError("Unknown family of age prior")
+			assert prior["age"]["lower"] >= self.mlp_phot.age_domain[0],"Error at the lower limit of the age prior! Verify mlp_phot file"
+			assert prior["age"]["upper"] <= self.mlp_phot.age_domain[1],"Error at the upper limit of the age prior! Verify mlp_phot file"
+		elif isinstance(parameters["age"],float()):
+			print("The age parameter will be fixed to: {0} Myr".format(parameters["age"]))
+		else:
+			KeyError("The age parameter can only be None or float")
 
-		assert prior["age"]["family"]  in ["TruncatedNormal","Uniform"], KeyError("Unknown family of age prior")
-		assert prior["distance"]["family"] in ["Gaussian","Uniform"], KeyError("Unknown family of distance prior")
-		assert prior["distance_dispersion"]["family"] in ["Exponential","Gamma"], KeyError("Unknown family of distance_dispersion prior")
-		assert prior["photometric_dispersion"]["family"] in ["Exponential","Gamma"], KeyError("Unknown family of photometric_dispersion prior")
-		#--------------------------------------------------------------------------------------------------------
+		if "distance" in self.hyperparameters.keys():
+			parameters["distance"] = self.df_hyp["distance"].to_numpy()
 
-		#--------------------- Verify that the input to the neural network conforms to its training -------------------------------
-		assert prior["age"]["lower"] >= self.mlp_phot.age_domain[0],"Error at the lower limit of the age prior! Verify mlp_phot file"
-		assert prior["age"]["upper"] <= self.mlp_phot.age_domain[1],"Error at the upper limit of the age prior! Verify mlp_phot file"
-		#---------------------------------------------------------------------------------------------------------------------------
+			print("The distance parameter will be fixed to the following values:")
+			print(parameters["distance"])
+		else:
+			assert ["distance_mu","distance_sd"] in parameters.keys(),KeyError("If the distance is not a hyperparameter its hyperparameters must be provided")
+			assert isinstance(parameters["distance_mu"],(None,float)),KeyError("The distance_mu parameter can only be None or float")
+			assert isinstance(parameters["distance_sd"],(None,float)),KeyError("The distance_sd parameter can only be None or float")
+			if parameters["distance_mu"] is None:
+				assert "distance_mu" in prior.keys(), KeyError('Please, provide a prior for distance_mu parameter')
+				assert prior["distance_mu"]["family"] in ["Gaussian","Uniform"], KeyError("Unknown family of distance_mu prior")
+			if parameters["distance_sd"] is None:
+				assert "distance_sd" in prior.keys(), KeyError('Please, provide a prior for distance_sd parameter')
+				assert prior["distance_sd"]["family"] in ["Exponential","Gamma"], KeyError("Unknown family of distance_sd prior")
+
+		if "photometric_dispersion" in parameters.keys():
+			assert "photometric_dispersion" in prior.keys(), KeyError('Please, provide a prior for photometric_dispersion parameter')
+			assert prior["photometric_dispersion"]["family"] in ["Exponential","Gamma"], KeyError("Unknown family of photometric_dispersion prior")
+		#--------------------------------------------------------------------------------------------------------------------------------------------
+
+
+		identifiers = self.data.index.values
+		assert len(identifiers) > 1,"The number of photometric sources is less than two!"
 		
 		#---------------------- Data arrangement ---------------------------------------------
-		astrometry_mu = self.data.loc[:,self.astrometric_names["values"]].to_numpy()
-		astrometry_sd = self.data.loc[:,self.astrometric_names["errors"]].to_numpy()
-		astrometry_ix = np.where(np.isfinite(astrometry_mu))
-		photometry_mu = self.data.loc[:,self.photometric_names["values"]].to_numpy()
-		photometry_sd = self.data.loc[:,self.photometric_names["errors"]].to_numpy()
-		photometry_ix = np.where(np.isfinite(photometry_mu))
-		n_stars = photometry_mu.shape[0]
-		assert n_stars > 1,"The number of photometric sources is less than two!"
+		if len(self.astrometric_names["values"])>0:
+			astrometry_names = self.astrometric_names["values"]
+			astrometry_mu = self.data.loc[:,self.astrometric_names["values"]].to_numpy()
+			astrometry_sd = self.data.loc[:,self.astrometric_names["errors"]].to_numpy()
+			astrometry_ix = np.where(np.isfinite(astrometry_mu))
 
-		assert np.isfinite(astrometry_mu[astrometry_ix]).all(),"Error: NaN in astrometry_mu"
-		assert np.isfinite(astrometry_sd[astrometry_ix]).all(),"Error: NaN in astrometry_sd"
+			assert np.isfinite(astrometry_mu[astrometry_ix]).all(),"Error: NaN in astrometry_mu"
+			assert np.isfinite(astrometry_sd[astrometry_ix]).all(),"Error: NaN in astrometry_sd"
+		else:
+			astrometry_names = None
+			astrometry_mu = None
+			astrometry_sd = None
+			astrometry_ix = None
 
-		assert np.isfinite(photometry_mu[photometry_ix]).all(),"Error: NaN in photometry_mu"
-		assert np.isfinite(photometry_sd[photometry_ix]).all(),"Error: NaN in photometry_sd"
+		if len(self.photometric_names["values"])>0:
+			photometry_names = self.photometric_names["values"]
+			photometry_mu = self.data.loc[:,self.photometric_names["values"]].to_numpy()
+			photometry_sd = self.data.loc[:,self.photometric_names["errors"]].to_numpy()
+			photometry_ix = np.where(np.isfinite(photometry_mu))
 
-		n_bands = len(self.photometric_names["values"])
-		identifiers = self.data.index.values
+			assert np.isfinite(photometry_mu[photometry_ix]).all(),"Error: NaN in photometry_mu"
+			assert np.isfinite(photometry_sd[photometry_ix]).all(),"Error: NaN in photometry_sd"
+		else:
+			photometry_names = None
+			photometry_mu = None
+			photometry_sd = None
+			photometry_ix = None
+
+		if len(self.spectroscopic_names["values"])>0:
+			spectroscopy_names = self.spectroscopic_names["values"] 
+			spectroscopy_mu = self.data.loc[:,self.spectroscopic_names["values"]].to_numpy()
+			spectroscopy_sd = self.data.loc[:,self.spectroscopic_names["errors"]].to_numpy()
+			spectroscopy_ix = np.where(np.isfinite(spectroscopy_mu))
+
+			assert np.isfinite(spectroscopy_mu[spectroscopy_ix]).all(),"Error: NaN in spectroscopy_mu"
+			assert np.isfinite(spectroscopy_sd[spectroscopy_ix]).all(),"Error: NaN in spectroscopy_sd"
+		else:
+			spectroscopy_names = None
+			spectroscopy_mu = None
+			spectroscopy_sd = None
+			spectroscopy_ix = None
+		#---------------------------------------------------------------------------------
 
 		self.Model = Model_v0(
 						mlp_phot=self.mlp_phot,
-						mlp_mass=self.mlp_mass,
+						mlp_teff=self.mlp_teff,
+						parameters = parameters,
 						prior = prior,
 						identifiers = identifiers,
+						astrometry_names = astrometry_names,
 						astrometry_mu = astrometry_mu,
 						astrometry_sd = astrometry_sd,
 						astrometry_ix = astrometry_ix,
+						photometry_names = photometry_names,
 						photometry_mu = photometry_mu,
 						photometry_sd = photometry_sd,
 						photometry_ix = photometry_ix,
-						astrometric_names = self.observables["astrometry"],
-						photometric_names = self.observables["photometry"]
+						spectroscopy_names = spectroscopy_names,
+						spectroscopy_mu = spectroscopy_mu,
+						spectroscopy_sd = spectroscopy_sd,
+						spectroscopy_ix = spectroscopy_ix
 						)
+		for key,value in self.Model.initial_point().items():
+			assert np.isfinite(value).all(),"Initial point error at {0}\n{1}".format(key,value)
 		#-------------------------------------------------------------------------------------
 
 	def plot_pgm(self, file: Optional[str] = None) -> None:
@@ -329,12 +395,9 @@ class Huehueti:
 		cores: int = 2,
 		step: Optional[Any] = None,
 		step_size: Optional[float] = None,
-		init_method: str = "advi+adapt_diag",
+		init_method: str = "advi",
 		init_iters: int = int(1e6),
-		init_absolute_tol: float = 5e-3,
-		init_relative_tol: float = 1e-5,
-		init_plot_iters: int = int(1e4),
-		init_refine: bool = False,
+		init_absolute_tol: float = 5e-10,
 		prior_predictive: bool = True,
 		prior_iters: int = 2000,
 		progressbar: bool = True,
@@ -350,80 +413,91 @@ class Huehueti:
 
 		# Only run sampling if posterior file does not already exist.
 		if not os.path.exists(self.file_chains):
-			#================== Optimization (ADVI) =============================================
-			# If an initialization file exists, read it (it saves starting points).
-			if os.path.exists(self.file_start):
-				print("Reading initial positions ...")
-				in_file = open(self.file_start, "rb")
-				approx = dill.load(in_file)
-				in_file.close()
-				start = approx["initial_points"][0]
+			#================== Optimization with variational inference ============================================
+
+			if init_method.lower() == "advi":
+				print("Finding initial positions with ADVI method")
+				vi = pm.ADVI(model=self.Model)
+			elif init_method.lower() == "fullrank_advi":
+				print("Finding initial positions with FullRankADVI method")
+				vi = pm.FullRankADVI(model=self.Model)
+			elif init_method.lower() == "svgd":
+				print("Finding initial positions with SVGD method")
+				vi = pm.SVGD(
+					n_particles=100,
+					jitter=1,
+					# obj_optimizer=pm.sgd(learning_rate=0.01),
+					model=self.Model)
 			else:
-				approx = None
-				start = None #self.starting_points
-				print("Finding initial positions ...")
+				sys.exit("Unrecognized VI method")
 
-				# Run ADVI if there is no saved initialization or if user requested refine.
-			if approx is None or (approx is not None and init_refine):
+			
+			# Convergence callbacks used to stop ADVI when parameter changes are small.
+			cnv_abs = pm.callbacks.CheckParametersConvergence(
+					tolerance=init_absolute_tol,
+					diff="absolute",ord=None)
+			tracker = pm.callbacks.Tracker(
+				  	mean=vi.approx.mean.eval,
+					std=vi.approx.std.eval)
 
-				# Prepare random seeds per chain (PyMC utility).
-				random_seed_list = pm.util._get_seeds_per_chain(random_seed, chains)
-				# Convergence callbacks used to stop ADVI when parameter changes are small.
-				cb = [pm.callbacks.CheckParametersConvergence(
-						tolerance=init_absolute_tol, diff="absolute",ord=None),
-					  pm.callbacks.CheckParametersConvergence(
-						tolerance=init_relative_tol, diff="relative",ord=None)]
+			approx = vi.fit(
+				n=init_iters,
+				callbacks=[cnv_abs,tracker],
+				progressbar=True)
 
-				approx = pm.fit(
-					start=start,
-					random_seed=random_seed_list[0],
-					n=init_iters,
-					method="advi",
-					model=self.Model,
-					callbacks=cb,
-					progressbar=True,
-					#test_optimizer=pm.adagrad#_window
-					)
+			# Save initialization to disk so future runs can reuse it.
+			out_file = open(self.file_start, "wb")
+			dill.dump(vi.state, out_file)
+			out_file.close()
 
-				#------------- Plot the ADVI loss (last init_plot_iters iterations) ----------------
-				plt.figure()
-				plt.plot(approx.hist[-init_plot_iters:])
-				plt.xlabel("Last {0} iterations".format(init_plot_iters))
-				plt.ylabel("Average Loss")
-				plt.savefig(self.file_advi_loss)
-				plt.close()
-				#-----------------------------------------------------------
-
-				# Sample initial points from the fitted variational approximation for each chain.
-				approx_sample = approx.sample(
-					draws=chains, 
-					random_seed=random_seed_list[0],
-					return_inferencedata=False
-					)
-
-				initial_points = [approx_sample[i] for i in range(chains)]
-				# Extract mean/std used to build HMC mass matrix/potential if needed.
-				sd_point = approx.std.eval()
-				mu_point = approx.mean.get_value()
-				approx = {
-					"initial_points":initial_points,
-					"mu_point":mu_point,
-					"sd_point":sd_point
-					}
-
-				# Save initialization to disk so future runs can reuse it.
-				out_file = open(self.file_start, "wb")
-				dill.dump(approx, out_file)
-				out_file.close()
+			#------------- Plot the ADVI loss (last init_plot_iters iterations) ----------------
+			fig = plt.figure(figsize=(16, 9))
+			mu_ax = fig.add_subplot(221)
+			std_ax = fig.add_subplot(222)
+			hist_ax = fig.add_subplot(212)
+			mu_ax.plot(tracker["mean"])
+			mu_ax.set_title("Mean track")
+			std_ax.plot(tracker["std"])
+			std_ax.set_title("Std track")
+			hist_ax.plot(vi.hist)
+			hist_ax.set_yscale("log")
+			hist_ax.set_title("Negative ELBO track")
+			plt.savefig(self.file_vi_loss)
+			plt.close()
+			#-----------------------------------------------------------
 
 			#----------- Extract values needed for sampler ---------------------
-			mu_point = approx["mu_point"]
-			sd_point = approx["sd_point"]
-			initial_points = approx["initial_points"]
-			#-------------------------------------------
+			mu_point = approx.mean.eval()
+			sd_point = approx.std.eval()
+
+			random_seed_list = pm.util._get_seeds_per_chain(random_seed, chains)
+			approx_sample = approx.sample(
+				draws=chains, 
+				random_seed=random_seed_list[0],
+				return_inferencedata=False
+				)
+			initial_points = [approx_sample[i] for i in range(chains)]
+			#--------------------------------------------------------------------
 
 			#=================== Sampling ==================================================
-			if nuts_sampler == "pymc":
+			if nuts_sampler.lower() == init_method.lower():
+				print("WARNING: Sampling posterior with {0}".format(nuts_sampler.upper()))
+				traces = []
+				for chain in np.arange(chains):
+					print("sampling chain: {0}".format(chain))
+					vi.refine(
+						n=tuning_iters,
+						progressbar=True)
+					vi.approx.hist = vi.hist
+					approx = vi.approx
+					tr = approx.sample(
+						draws=sample_iters, 
+						random_seed=None,
+						return_inferencedata=True)
+					traces.append(tr)
+				trace = az.concat(traces,dim="chain")
+
+			elif nuts_sampler == "pymc":
 				#--------------- Prepare step with a diagonal quadpotential -----------------
 				potential = pm.step_methods.hmc.quadpotential.QuadPotentialDiagAdapt(
 							n=len(mu_point),
@@ -454,26 +528,6 @@ class Huehueti:
 					nuts_sampler_kwargs={"step_size":step_size},
 					model=self.Model
 					)
-			elif nuts_sampler.lower() == "advi":
-				print("WARNING: Sampling posterior with ADVI")
-				traces = []
-				for chain in np.arange(chains):
-					print("sampling chain: {0}".format(chain))
-					approx = pm.fit(
-						start=initial_points[chain],
-						random_seed=chain,
-						n=tuning_iters,
-						method="advi",
-						model=self.Model,
-						progressbar=True
-						)
-					tr = approx.sample(
-						draws=sample_iters, 
-						random_seed=None,
-						return_inferencedata=True)
-					traces.append(tr)
-				trace = az.concat(traces,dim="chain")
-
 			else:
 				#---------- Posterior sampling using default sampler backend (e.g., numpyro) -----------
 				trace = pm.sample(
@@ -512,7 +566,7 @@ class Huehueti:
 		print("Sampling done!")
 		
 
-	def load_trace(self, file_chains: Optional[str] = None) -> None:
+	def load_trace(self, file_chains: Optional[str] = None,chains=None) -> None:
 		'''
 		Loads a previously saved sampling of the model (ArviZ InferenceData from NetCDF).
 
@@ -531,6 +585,8 @@ class Huehueti:
 		#---------Load posterior ---------------------------------------------------
 		try:
 			posterior = az.from_netcdf(file_chains)
+			if chains is not None:
+				posterior = posterior.sel(chain=chains)
 		except ValueError:
 			# Fatal error if file cannot be parsed / is incompatible.
 			sys.exit("ERROR at loading {0}".format(file_chains))
@@ -561,16 +617,17 @@ class Huehueti:
 		#------- Build lists of variables grouped by use (source-level vs global) -----------
 		source_variables = list(filter(lambda x: (("mass" in x)
 											or ("distance" in x)
-											or ("theta" in x)
 											or ("astrometry" in x)
 											or ("photometry" in x)
+											or ("spectroscopy" in x)
 											), 
 											self.ds_posterior.data_vars))
 		global_variables = list(filter(lambda x: (("age" in x)
-											or (x == "distance_central")
-											or (x == "distance_dispersion")
-											or ("astrometric_" in x) 
+											or (x == "distance_mu")
+											or (x == "distance_sd")
+											or ("astrometric_" in x)
 											or ("photometric_" in x)
+											or ("spectroscopic_" in x)
 											),
 											self.ds_posterior.data_vars))
 	
@@ -588,22 +645,14 @@ class Huehueti:
 		tmp_cpp   = global_variables.copy()
 		tmp_prd   = source_variables.copy()
 
-		# Remove "true" variants from source_variables (we want the inferred quantities)
-		for var in tmp_src:
-			if (
-				("true" in var)
-				):
-				source_variables.remove(var)
-
-		# Keep only relevant source statistics variables: mass, distance, astrometry and photometry (not "true")
+		
 		for var in tmp_sts_src:
 			if not (
 				(var == "mass") or 
 				(var == "distance") or
-				(var == "theta") or
 				("astrometry" in var) or 
-				(("photometry" in var)
-					and not ("true" in var))
+				("photometry" in var) or
+				("spectroscopy" in var)
 				):
 				source_sts_variables.remove(var)
 
@@ -611,26 +660,25 @@ class Huehueti:
 		for var in tmp_sts_glb:
 			if not (
 				("age" in var) or 
-				(var == "distance_central") or 
-				(var == "distance_dispersion") or
-				("photometric_" in var) 
+				(var == "distance_mu") or 
+				(var == "distance_sd") or
+				("photometric_" in var)
 				):
 				global_sts_variables.remove(var)
 
 		# Variables to compare prior/posterior (cpp): only keep age, distance central/dispersion and photometric_*
 		for var in tmp_cpp:
 			if not (("age" in var)
-				or (var == "distance_central")
-				or (var == "distance_dispersion")
+				or (var == "distance_mu")
+				or (var == "distance_sd")
 				or ("photometric_" in var)):
 				global_cpp_var.remove(var)
 
-		# For posterior predictions keep photometry true values (predictions) and drop others
 		for var in tmp_prd:
 			if (
-				(("photometry" in var) 
-					and not ("true" in var)) 
-				or ("astrometry" in var)
+				("astrometry" in var)
+				or ("photometry" in var)
+				or ("spectroscopy" in var)
 				):
 				# keep (pass)
 				pass
@@ -669,6 +717,10 @@ class Huehueti:
 			print("Step size:")
 			# The trace object has sample_stats; average over draws to report mean step_size per chain.
 			for i,val in enumerate(self.trace.sample_stats["step_size"].mean(dim="draw")):
+				print("Chain {0}: {1:3.8f}".format(i,val))
+			print("LogP:")
+			# The trace object has sample_stats; average over draws to report mean logP per chain.
+			for i,val in enumerate(self.trace.sample_stats["lp"].mean(dim="draw")):
 				print("Chain {0}: {1:3.8f}".format(i,val))
 
 	def plot_chains(self,
@@ -893,13 +945,13 @@ class Huehueti:
 					size=n_samples,replace=False)
 		# Use mean distance from posterior for converting absolute->apparent.
 		distance = np.mean(self.trace.posterior["distance"].values.flatten())
-		theta    = np.linspace(self.mlp_phot.theta_domain[0],self.mlp_phot.theta_domain[1],n_points)
+		mass     = np.linspace(self.mlp_phot.mass_domain[0],self.mlp_phot.mass_domain[1],n_points)
 
 		dfs_smp = []
 		# For each sampled age, query MLP to produce absolute photometry and convert to apparent.
 		for age in ages:
-			absolute_photometry = self.mlp_phot(age,theta,n_points)
-			photometry = absolute_to_apparent(absolute_photometry,distance,11)
+			absolute_photometry = self.mlp_phot(age,mass,n_points)
+			photometry = absolute_to_apparent(absolute_photometry,distance)
 			df_tmp = pn.DataFrame(
 					data=photometry.eval(),
 					columns=self.observables["photometry"])
@@ -912,7 +964,7 @@ class Huehueti:
 		#------------------------------------------------------------------------------
 
 		#-------------- Photometric data: compute posterior predicted mean per source -------
-		df_pht = self.trace.posterior["photometry"].to_dataframe().unstack("photometric_names")
+		df_pht = self.trace.posterior["photometry"].to_dataframe().unstack("photometry_names")
 		df_pht.columns = df_pht.columns.droplevel(level=0)
 		df_pos = df_pht.groupby("source_id").mean()
 		#----------------------------------------------------------------------------------------
@@ -974,8 +1026,109 @@ class Huehueti:
 		plt.savefig(file_plot,bbox_inches='tight',dpi=dpi)
 		plt.close(0)
 
-	# The HRD plotting function is present but commented out in the original file.
-	# If needed it can be uncommented and updated with the same style of comments.
+	def plot_hrd(self,
+		file_plot: Optional[str] = None,
+		figsize: Optional[tuple] = None,
+		magnitude: str = "phot_g_mean_mag",
+		n_samples: int = 10,
+		n_points: int = 100,
+		scatter_palette: str = "dark",
+		lines_color: str = "orange",
+		alpha: float = 1.0,
+		dpi: int = 600,
+	) -> None:
+		"""
+		Plot a Hertzprung-Russell diagram (HRD) showing observed points, predicted points,
+		and sampled isochrones drawn from the posterior distribution.
+		"""
+		print("Plotting HRD ...")
+
+		msg_n = "The required n_samples {0} is larger than those in the posterior.".format(n_samples)
+
+		# Ensure we have enough posterior draws to sample unique ages.
+		assert n_samples <= self.ds_posterior.sizes["draw"], msg_n
+
+		#----- Draw ages from posterior and prepare a theta grid used by MLP -----------
+		ages = np.random.choice(self.trace.posterior["age"].values.flatten(),
+					size=n_samples,replace=False)
+		mass     = np.linspace(self.mlp_phot.mass_domain[0],self.mlp_phot.mass_domain[1],n_points)
+
+		dfs_smp = []
+		# For each sampled age, query MLP to produce absolute photometry and convert to apparent.
+		for age in ages:
+			teff = self.mlp_teff(age,mass,n_points)
+			absolute_photometry = self.mlp_phot(age,mass,n_points)
+			photometry = absolute_to_apparent(absolute_photometry,distance)
+			df_tmp = pn.DataFrame(
+					data=photometry.eval(),
+					columns=self.observables["photometry"])
+			# The sampled isochrone points are indexed by star and age for plotting.
+			df_tmp.index.name = "star"
+			df_tmp["age"] = age
+			df_tmp["teff"] = teff.flatten().eval()
+			df_tmp.set_index("age",append=True,inplace=True)
+			dfs_smp.append(df_tmp)
+		df_smp = pn.concat(dfs_smp,ignore_index=False)
+		#------------------------------------------------------------------------------
+
+		#-------------- Photometric data: compute posterior predicted mean per source -------
+		df_pht = self.trace.posterior["photometry"].to_dataframe().unstack("photometry_names")
+		df_pht.columns = df_pht.columns.droplevel(level=0)
+		df_pht = df_pht.groupby("source_id").mean()
+		#----------------------------------------------------------------------------------------
+
+		#-------------- Spectroscopic data: compute posterior predicted mean per source -------
+		df_spc = self.trace.posterior["spectroscopy"].to_dataframe().unstack("spectroscopy_names")
+		df_spc.columns = df_spc.columns.droplevel(level=0)
+		df_spc = df_spc.groupby("source_id").mean()
+		#----------------------------------------------------------------------------------------
+
+		#---------------- Color and magnitude  ------------------------
+		# Use a set to avoid duplicated columns if magnitude also in color list
+		columns = [magnitude,"teff"]
+		#--------------------------------------------------------------
+
+		#---------- Dataframes ------------------
+		df_obs = self.data.loc[:,columns].copy()
+		df_prd = df_pht.join(df_spc).loc[:,columns].copy()
+		df_smp = df_smp.loc[:,columns].copy()
+		#-----------------------------------------
+
+		#------------------- Concatenate observed and predicted for common scatter plotting -----------------
+		df_obs["Origin"] = "Observed"
+		df_prd["Origin"] = "Predicted"
+		df_all = pn.concat([df_obs,df_prd],
+					ignore_index=True) #Otherwise seaborn scatterplot may trip on duplicated indices
+		#------------------------------------------
+
+		file_plot = file_plot if (file_plot is not None) else self.file_hrd
+		#----------------- Produce CMD --------------------------------------------
+		plt.figure(0,figsize=figsize)
+		ax = sns.scatterplot(data=df_all,
+						x="teff",
+						y=magnitude,
+						palette=sns.color_palette(scatter_palette,n_colors=2),
+						hue="Origin",
+						style="Origin",
+						s=10,
+						zorder=0)
+		# Overplot sampled isochrone lines colored by age (but not showing legend)
+		sns.lineplot(data=df_smp,
+						x="teff",
+						y=magnitude,
+						palette=sns.color_palette([lines_color], n_samples),
+						hue="age",
+						legend=False,
+						alpha=alpha,
+						sort=False,
+						zorder=1,
+						ax=ax)
+		ax.set_xlabel("Teff [K]")
+		ax.set_ylabel("{0} {1}".format(magnitude,"[mag]"))
+		ax.invert_yaxis()  # Magnitudes increase downward in plots
+		ax.set_title("Apparent photometry")
+		plt.savefig(file_plot,bbox_inches='tight',dpi=dpi)
+		plt.close(0)
 
 	
 	def save_statistics(self,
@@ -995,7 +1148,7 @@ class Huehueti:
 		#-------------- Source statistics ----------------------------
 		dfs = []
 		for case in self.source_sts_variables:
-			if case in ["mass","distance","theta"]:
+			if case in ["distance","mass","teff"]:
 				df_tmp  = az.summary(self.ds_posterior,
 							var_names=case,
 							stat_focus = stat_focus,
@@ -1006,14 +1159,14 @@ class Huehueti:
 							)
 				df_tmp.set_index(self.ID,inplace=True)
 				df_tmp.columns = pn.MultiIndex.from_product([[case], df_tmp.columns])
-				df_tmp = df_tmp.stack(sort=False)
+				df_tmp = df_tmp.stack(sort=False,future_stack=False)
 				df_tmp = df_tmp.rename_axis(index=[self.id_name,"statistic"])
 				dfs.append(df_tmp)
 			elif case == "astrometry":
 				for var in self.observables[case]:
 					df_tmp  = az.summary(self.ds_posterior,
 								var_names=case,
-								coords={"astrometric_names":var},
+								coords={"astrometry_names":var},
 								stat_focus = stat_focus,
 								hdi_prob=hdi_prob,
 								round_to=5,
@@ -1022,14 +1175,14 @@ class Huehueti:
 								)
 					df_tmp.set_index(self.ID,inplace=True)
 					df_tmp.columns = pn.MultiIndex.from_product([[var], df_tmp.columns])
-					df_tmp = df_tmp.stack(sort=False)
+					df_tmp = df_tmp.stack(sort=False,future_stack=False)
 					df_tmp = df_tmp.rename_axis(index=[self.id_name,"statistic"])
 					dfs.append(df_tmp)
 			elif case == "photometry":
 				for var in self.observables[case]:
 					df_tmp  = az.summary(self.ds_posterior,
 								var_names=case,
-								coords={"photometric_names":var},
+								coords={"photometry_names":var},
 								stat_focus = stat_focus,
 								hdi_prob=hdi_prob,
 								round_to=5,
@@ -1038,7 +1191,7 @@ class Huehueti:
 								)
 					df_tmp.set_index(self.ID,inplace=True)
 					df_tmp.columns = pn.MultiIndex.from_product([[var], df_tmp.columns])
-					df_tmp = df_tmp.stack(sort=False)
+					df_tmp = df_tmp.stack(sort=False,future_stack=False)
 					df_tmp = df_tmp.rename_axis(index=[self.id_name,"statistic"])
 					dfs.append(df_tmp)
 			else:
@@ -1066,40 +1219,45 @@ if __name__ == "__main__":
 	# Example run when executed as a script. These defaults assume a certain
 	# directory layout (data/, mlps/, outputs/) relative to the current working dir.
 
-	dir_data = os.getcwd() + "/data/synthetic/"
-	dir_out  = os.getcwd() + "/outputs/synthetic_PARSEC_v0_a90_n50_d136_t1e-03_s0/"
-	dir_mlps = os.getcwd() + "/mlps/PARSEC/"
+	age,distance,n_stars,seed = 120,136,10,1
+	dir_base    = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/"
+	dir_mlps    = "/home/jolivares/Models/PARSEC/Gaia_EDR3_15-400Myr/MLPs/"
+
+	dir_inputs  = dir_base + "inputs/"
+	dir_outputs = dir_base + "outputs/"
+	base_name   = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
+	file_data = dir_inputs  + base_name.format(age,distance,n_stars,seed)+".csv"
+	dir_out   = dir_outputs + base_name.format(age,distance,n_stars,seed)+"_fixed_distance_numpyro/"
+
+	file_mlp_phot = dir_mlps + "Phot_l7_s512/mlp.pkl"
+	file_mlp_teff = dir_mlps + "Teff_l16_s512/mlp.pkl"
 
 	os.makedirs(dir_out,exist_ok=True)
 
-	# file_data      = dir_data + "Pleiades.csv"
-	file_data      = dir_data + "Synthetic_a90_n50_d136_t1e-03_s0.csv"
-	file_mlp_phot  = dir_mlps + "GP2_l9_s512/mlp.pkl"
-	file_mlp_mass  = dir_mlps + "mTg_l7_s256/mlp.pkl"
-	file_posterior = dir_out  + "Chains.nc"
-	file_prior     = dir_out  + "Prior.nc"
-
-
+	absolute_photometry = ['Gmag', 'G_BPmag', 'G_RPmag']
 	observables = {
-	"photometry":['G', 'BP', 'RP','gP1','rP1','iP1','zP1','yP1','J','H','Ks'],
-	"photometry_error":['e_G', 'e_BP', 'e_RP','e_gP1','e_rP1','e_iP1','e_zP1','e_yP1','e_J','e_H','e_Ks'],
+	"photometry":['phot_g_mean_mag', 'phot_bp_mean_mag', 'phot_rp_mean_mag'],
+	"photometry_error":['phot_g_mean_mag_error', 'phot_bp_mean_mag_error', 'phot_rp_mean_mag_error'],
 	}
 
+	parameters = {"age":None}
+	hyperparameters = {"distance":"distance"}
+
 	# Example priors to be passed to Huehueti.setup
-	priors = {
+	prior = {
 		'age' : {
 			'family' : 'Uniform',
-			'mu'    : 50.,
-			'sigma' : 30.,
+			'mu'    : 120.,
+			'sigma' : 20.,
 			'lower' : 20,
 			'upper' : 200,
 			},
-		'distance' : {
+		'distance_mu' : {
 			'family' : 'Gaussian',
 			'mu' : 136.,
-			'sigma' : 10.
+			'sigma' : 5.
 			},
-		"distance_dispersion":{
+		"distance_sd":{
 			"family": "Exponential",
 			"scale" : 5.
 			},
@@ -1122,54 +1280,41 @@ if __name__ == "__main__":
 		},
 	}
 
-	filtering = {
-	'G':10.0,
-	'e_G':1e-3,
-	'BP':10.0,
-	'e_BP':1e-3,
-	'RP':10.0,
-	'e_RP':1e-3,
-	'gP1':10.0,
-	'e_gP1':1e-3,
-	'rP1':10.0,
-	'e_rP1':1e-3,
-	'iP1':10.0,
-	'e_iP1':1e-3,
-	'zP1':10.0,
-	'e_zP1':1e-3,
-	'yP1':10.0,
-	'e_yP1':1e-3,
-	'J':10.0,
-	'e_J':1e-3,
-	'H':10.0,
-	'e_H':1e-3,
-	'Ks':10.0,
-	'e_Ks':1e-3
-	}
-
-
 	hue = Huehueti(
 		dir_out = dir_out, 
 		file_mlp_phot=file_mlp_phot,
-		file_mlp_mass=file_mlp_mass,
-		observables=observables)
+		file_mlp_teff=file_mlp_teff,
+		observables=observables,
+		absolute_photometry=absolute_photometry,
+		hyperparameters = hyperparameters,
+		)
 	hue.load_data(
-		file_data = file_data,
-		max_phot_uncertainty=filtering)
-	hue.setup(prior = priors)
+		file_data = file_data
+		)
+	hue.setup(
+		parameters = parameters, 
+		prior = prior
+		)
 	# hue.plot_pgm()
 	hue.run(
-		init_iters=int(6e4),
-		init_refine=False,
-		nuts_sampler="advi",
-		tuning_iters=int(5e4),
+		init_method="advi",
+		# init_method="fullrank_advi",
+		init_iters=int(5e5),
+		# nuts_sampler="advi",
+		# nuts_sampler="fullrank_advi",
+		nuts_sampler="numpyro",
+		# tuning_iters=int(1e4),
+		tuning_iters=2000,
 		sample_iters=2000,
-		prior_iters=2000)
-	hue.load_trace()
+		prior_iters=2000,
+		chains=4,
+		cores=4)
+	hue.load_trace(chains=[0,2,3])
 	hue.convergence()
 	hue.plot_chains()
 	hue.plot_posterior()
 	hue.plot_cpp()
 	hue.plot_predictions()
-	hue.plot_cmd(cmd={"magnitude":"G","color":["G","RP"]})
+	hue.plot_cmd(cmd={"magnitude":"phot_g_mean_mag","color":["phot_g_mean_mag","phot_rp_mean_mag"]})
+	# hue.plot_hrd(magnitude="phot_g_mean_mag")
 	hue.save_statistics()

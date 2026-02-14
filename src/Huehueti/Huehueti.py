@@ -392,7 +392,7 @@ class Huehueti:
 		sample_iters: int = 2000,
 		target_accept: float = 0.65,
 		chains: int = 2,
-		cores: int = 2,
+		cores: int = None,
 		step: Optional[Any] = None,
 		step_size: Optional[float] = None,
 		init_method: str = "advi",
@@ -402,69 +402,72 @@ class Huehueti:
 		prior_iters: int = 2000,
 		progressbar: bool = True,
 		nuts_sampler: str = "numpyro",
+		nuts_sampler_kwargs: Optional[Dict] = None,
 		random_seed: Optional[int] = None) -> None:
 		"""
 		Performs the variational initialization (ADVI) followed by MCMC sampling.
 		"""
-		#------- Step_size ----------
-		if step_size is None:
-			step_size = 1.e-1
-		#---------------------------
 
 		# Only run sampling if posterior file does not already exist.
 		if not os.path.exists(self.file_chains):
-			#================== Optimization with variational inference ============================================
+			if not os.path.exists(self.file_start):
+				#================== Optimization with variational inference ============================================
+				if init_method.lower() == "advi":
+					print("Finding initial positions with ADVI method")
+					vi = pm.ADVI(model=self.Model)
+				elif init_method.lower() == "fullrank_advi":
+					print("Finding initial positions with FullRankADVI method")
+					vi = pm.FullRankADVI(model=self.Model)
+				elif init_method.lower() == "svgd":
+					print("Finding initial positions with SVGD method")
+					vi = pm.SVGD(
+						n_particles=100,
+						jitter=1,
+						# obj_optimizer=pm.sgd(learning_rate=0.01),
+						model=self.Model)
+				else:
+					sys.exit("Unrecognized VI method")
 
-			if init_method.lower() == "advi":
-				print("Finding initial positions with ADVI method")
-				vi = pm.ADVI(model=self.Model)
-			elif init_method.lower() == "fullrank_advi":
-				print("Finding initial positions with FullRankADVI method")
-				vi = pm.FullRankADVI(model=self.Model)
-			elif init_method.lower() == "svgd":
-				print("Finding initial positions with SVGD method")
-				vi = pm.SVGD(
-					n_particles=100,
-					jitter=1,
-					# obj_optimizer=pm.sgd(learning_rate=0.01),
-					model=self.Model)
+				
+				# Convergence callbacks used to stop ADVI when parameter changes are small.
+				cnv_abs = pm.callbacks.CheckParametersConvergence(
+						tolerance=init_absolute_tol,
+						diff="absolute",ord=None)
+				tracker = pm.callbacks.Tracker(
+					  	mean=vi.approx.mean.eval,
+						std=vi.approx.std.eval)
+
+				approx = vi.fit(
+					n=init_iters,
+					callbacks=[cnv_abs,tracker],
+					progressbar=True)
+
+				#------------- Plot the ADVI loss (last init_plot_iters iterations) ----------------
+				fig = plt.figure(figsize=(16, 9))
+				mu_ax = fig.add_subplot(221)
+				std_ax = fig.add_subplot(222)
+				hist_ax = fig.add_subplot(212)
+				mu_ax.plot(tracker["mean"])
+				mu_ax.set_title("Mean track")
+				std_ax.plot(tracker["std"])
+				std_ax.set_title("Std track")
+				hist_ax.plot(vi.hist)
+				hist_ax.set_yscale("log")
+				hist_ax.set_title("Negative ELBO track")
+				plt.savefig(self.file_vi_loss)
+				plt.close()
+				#-----------------------------------------------------------
+
+				# Save initialization to disk so future runs can reuse it.
+				with open(self.file_start, "wb") as out_file:
+					dill.dump(approx, out_file)
 			else:
-				sys.exit("Unrecognized VI method")
+				assert nuts_sampler.lower() != init_method.lower(),("Error: "+
+				"To sample with the same method as the initialization "+
+				"please remove file:\n {0}".format(self.file_start))
 
-			
-			# Convergence callbacks used to stop ADVI when parameter changes are small.
-			cnv_abs = pm.callbacks.CheckParametersConvergence(
-					tolerance=init_absolute_tol,
-					diff="absolute",ord=None)
-			tracker = pm.callbacks.Tracker(
-				  	mean=vi.approx.mean.eval,
-					std=vi.approx.std.eval)
-
-			approx = vi.fit(
-				n=init_iters,
-				callbacks=[cnv_abs,tracker],
-				progressbar=True)
-
-			# Save initialization to disk so future runs can reuse it.
-			out_file = open(self.file_start, "wb")
-			dill.dump(vi.state, out_file)
-			out_file.close()
-
-			#------------- Plot the ADVI loss (last init_plot_iters iterations) ----------------
-			fig = plt.figure(figsize=(16, 9))
-			mu_ax = fig.add_subplot(221)
-			std_ax = fig.add_subplot(222)
-			hist_ax = fig.add_subplot(212)
-			mu_ax.plot(tracker["mean"])
-			mu_ax.set_title("Mean track")
-			std_ax.plot(tracker["std"])
-			std_ax.set_title("Std track")
-			hist_ax.plot(vi.hist)
-			hist_ax.set_yscale("log")
-			hist_ax.set_title("Negative ELBO track")
-			plt.savefig(self.file_vi_loss)
-			plt.close()
-			#-----------------------------------------------------------
+				with open(self.file_start, 'rb') as in_strm:
+					approx = dill.load(in_strm)
 
 			#----------- Extract values needed for sampler ---------------------
 			mu_point = approx.mean.eval()
@@ -497,6 +500,22 @@ class Huehueti:
 					traces.append(tr)
 				trace = az.concat(traces,dim="chain")
 
+			elif nuts_sampler == "numpyro":
+				#---------- Posterior sampling using default sampler backend (e.g., numpyro) -----------
+				trace = pm.sample(
+					draws=sample_iters,
+					initvals=initial_points,
+					nuts_sampler=nuts_sampler,
+					tune=tuning_iters,
+					chains=chains, 
+					progressbar=progressbar,
+					target_accept=target_accept,
+					discard_tuned_samples=True,
+					return_inferencedata=True,
+					nuts_sampler_kwargs=nuts_sampler_kwargs,
+					model=self.Model
+					)
+
 			elif nuts_sampler == "pymc":
 				#--------------- Prepare step with a diagonal quadpotential -----------------
 				potential = pm.step_methods.hmc.quadpotential.QuadPotentialDiagAdapt(
@@ -525,11 +544,10 @@ class Huehueti:
 					progressbar=progressbar,
 					discard_tuned_samples=True,
 					return_inferencedata=True,
-					nuts_sampler_kwargs={"step_size":step_size},
+					nuts_sampler_kwargs=nuts_sampler_kwargs,
 					model=self.Model
 					)
 			else:
-				#---------- Posterior sampling using default sampler backend (e.g., numpyro) -----------
 				trace = pm.sample(
 					draws=sample_iters,
 					initvals=initial_points,
@@ -538,12 +556,12 @@ class Huehueti:
 					chains=chains, 
 					cores=cores,
 					progressbar=progressbar,
-					target_accept=target_accept,
 					discard_tuned_samples=True,
 					return_inferencedata=True,
-					#nuts_sampler_kwargs={"step_size":step_size},
+					nuts_sampler_kwargs=nuts_sampler_kwargs,
 					model=self.Model
 					)
+			
 
 			#--------- Save posterior samples to disk in ArviZ NetCDF representation ------------
 			print("Saving posterior samples ...")
@@ -732,6 +750,7 @@ class Huehueti:
 		lines: Optional[Any] = None, 
 		combined: bool = False,
 		compact: bool = False,
+		legend: bool = True,
 		plot_kwargs: Optional[Dict[str,Any]] = None, 
 		hist_kwargs: Optional[Dict[str,Any]] = None, 
 		trace_kwargs: Optional[Dict[str,Any]] = None,
@@ -768,6 +787,7 @@ class Huehueti:
 						lines=lines, 
 						combined=combined,
 						compact=compact,
+						legend=legend,
 						plot_kwargs=plot_kwargs, 
 						hist_kwargs=hist_kwargs, 
 						trace_kwargs=trace_kwargs)
@@ -799,7 +819,8 @@ class Huehueti:
 					figsize=figsize,
 					lines=lines, 
 					combined=combined,
-					# compact=compact,
+					compact=compact,
+					legend=legend,
 					plot_kwargs=plot_kwargs, 
 					hist_kwargs=hist_kwargs, 
 					trace_kwargs=trace_kwargs,
@@ -1220,14 +1241,14 @@ if __name__ == "__main__":
 	# directory layout (data/, mlps/, outputs/) relative to the current working dir.
 
 	age,distance,n_stars,seed = 120,136,10,1
-	dir_base    = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/"
+	dir_base    = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC_tests/"
 	dir_mlps    = "/home/jolivares/Models/PARSEC/Gaia_EDR3_15-400Myr/MLPs/"
 
 	dir_inputs  = dir_base + "inputs/"
 	dir_outputs = dir_base + "outputs/"
 	base_name   = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 	file_data = dir_inputs  + base_name.format(age,distance,n_stars,seed)+".csv"
-	dir_out   = dir_outputs + base_name.format(age,distance,n_stars,seed)+"_fixed_distance_numpyro/"
+	dir_out   = dir_outputs + base_name.format(age,distance,n_stars,seed)+"_fixed_distance_numpyro_new/"
 
 	file_mlp_phot = dir_mlps + "Phot_l7_s512/mlp.pkl"
 	file_mlp_teff = dir_mlps + "Teff_l16_s512/mlp.pkl"
@@ -1304,12 +1325,12 @@ if __name__ == "__main__":
 		# nuts_sampler="fullrank_advi",
 		nuts_sampler="numpyro",
 		# tuning_iters=int(1e4),
-		tuning_iters=2000,
-		sample_iters=2000,
-		prior_iters=2000,
+		tuning_iters=int(2e3),
+		sample_iters=int(2e3),
+		prior_iters=int(2e3),
 		chains=4,
 		cores=4)
-	hue.load_trace(chains=[0,2,3])
+	hue.load_trace()#chains=[0,2,3])
 	hue.convergence()
 	hue.plot_chains()
 	hue.plot_posterior()

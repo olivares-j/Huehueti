@@ -270,7 +270,7 @@ class Huehueti:
 		"""
 		#----------------- Initialize NNs -------------------
 		self.mlp_phot = MLP_phot(file_mlp=self.file_mlp_phot)
-		self.mlp_teff = MLP_teff(file_mlp=self.file_mlp_teff)
+		self.mlp_teff = None #MLP_teff(file_mlp=self.file_mlp_teff)
 		#----------------------------------------------------
 
 		assert self.mlp_phot.targets == self.absolute_photometry,KeyError("Absolute bands do not correspond to PARSEC mlp ones")
@@ -1242,15 +1242,15 @@ if __name__ == "__main__":
 
 	age,distance,n_stars,seed = 120,136,10,1
 	dir_base    = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC_tests/"
-	dir_mlps    = "/home/jolivares/Models/PARSEC/Gaia_EDR3_15-400Myr/MLPs/"
+	dir_mlps    = "/home/jolivares/Models/PARSEC/Gaia_EDR3/100-500Myr/MLPs/"
 
 	dir_inputs  = dir_base + "inputs/"
 	dir_outputs = dir_base + "outputs/"
 	base_name   = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 	file_data = dir_inputs  + base_name.format(age,distance,n_stars,seed)+".csv"
-	dir_out   = dir_outputs + base_name.format(age,distance,n_stars,seed)+"_fixed_distance_numpyro_new/"
+	dir_out   = dir_outputs + base_name.format(age,distance,n_stars,seed)+"_fixed_distance_numpyro_3/"
 
-	file_mlp_phot = dir_mlps + "Phot_l7_s512/mlp.pkl"
+	file_mlp_phot = dir_mlps + "Phot_l3_s1024/mlp.pkl"
 	file_mlp_teff = dir_mlps + "Teff_l16_s512/mlp.pkl"
 
 	os.makedirs(dir_out,exist_ok=True)
@@ -1270,8 +1270,8 @@ if __name__ == "__main__":
 			'family' : 'Uniform',
 			'mu'    : 120.,
 			'sigma' : 20.,
-			'lower' : 20,
-			'upper' : 200,
+			'lower' : 101,
+			'upper' : 500,
 			},
 		'distance_mu' : {
 			'family' : 'Gaussian',
@@ -1328,8 +1328,7 @@ if __name__ == "__main__":
 		tuning_iters=int(2e3),
 		sample_iters=int(2e3),
 		prior_iters=int(2e3),
-		chains=4,
-		cores=4)
+		chains=1)
 	hue.load_trace()#chains=[0,2,3])
 	hue.convergence()
 	hue.plot_chains()

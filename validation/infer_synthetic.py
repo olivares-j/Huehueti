@@ -1,18 +1,18 @@
 import sys
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 sys.path.append("/home/jolivares/Repos/Huehueti/src/Huehueti/")
 from Huehueti import Huehueti
 
-dir_base       = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC_tests/"
-file_mlp_phot  = "/home/jolivares/Models/PARSEC/Gaia_EDR3_15-400Myr/MLPs/Phot_l7_s512/mlp.pkl"
-file_mlp_teff  = "/home/jolivares/Models/PARSEC/Gaia_EDR3_15-400Myr/MLPs/Teff_l16_s512/mlp.pkl"
+dir_base       = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/"
+file_mlp_phot  = "/home/jolivares/Models/PARSEC/Gaia_EDR3/20-100Myr/MLPs/Phot_l3_s1024/mlp.pkl"
+file_mlp_teff  = "/home/jolivares/Models/PARSEC/Gaia_EDR3/15-400Myr/MLPs/Teff_l16_s512/mlp.pkl"
 
-list_of_ages = [120] #list(range(20,420,20))
-list_of_distances  = [136] #[50]
+list_of_ages = list(range(20,120,20))
+list_of_distances  = [50]
 n_stars   = 10
-seed      = 1
+seed      = 0
 
 
 dir_inputs  = dir_base + "inputs/"
@@ -29,7 +29,8 @@ parameters = {"age":None}
 hyperparameters = {"distance":"distance"}
 
 chains ={
-	80:None,100:None,120:None,140:None,160:None,180:None,200:[1,2],220:None,240:None,260:None,280:None,300:None,3200:None,340:None,360:None,380:None,400:None
+	20:None,40:None,60:None,80:None,100:None,120:None,140:None,160:None,180:None,200:[1,2],
+	220:None,240:None,260:None,280:None,300:None,3200:None,340:None,360:None,380:None,400:None
 }
 
 
@@ -40,7 +41,7 @@ def set_prior(age,distance):
 		'mu'    : float(age),
 		'sigma' : 30.,
 		'lower' : 20,
-		'upper' : 200,
+		'upper' : 100,
 		},
 	'distance' : {
 		'family' : 'Gaussian',
@@ -114,7 +115,7 @@ for age in list_of_ages:
 		sample_iters=int(2e3),
 		prior_iters=int(2e3),
 		chains=4)
-		hue.load_trace(chains=chains[age])
+		hue.load_trace()#chains=chains[age])
 		hue.convergence()
 		hue.plot_chains()
 		hue.plot_posterior()

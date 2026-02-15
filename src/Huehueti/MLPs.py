@@ -136,7 +136,7 @@ class MLP_phot:
 				self.age_domain  = mlp["age_domain"]
 				self.mass_domain = mlp["mass_domain"]
 
-			assert num_layers == 7, "Error: mismatch in number of layers!"
+			assert num_layers == 3, "Error: mismatch in number of layers!"
 
 		except FileNotFoundError as error:
 			# Provide a clear error for the user if file missing
@@ -194,10 +194,10 @@ class MLP_phot:
 		A1  = relu(pt.dot(A0, self.W[0])  + self.b[0])
 		A2  = relu(pt.dot(A1, self.W[1])  + self.b[1])
 		A3  = relu(pt.dot(A2, self.W[2])  + self.b[2])
-		A4  = relu(pt.dot(A3, self.W[3])  + self.b[3])
-		A5  = relu(pt.dot(A4, self.W[4])  + self.b[4])
-		A6  = relu(pt.dot(A5, self.W[5])  + self.b[5])
-		A7  = relu(pt.dot(A6, self.W[6])  + self.b[6])
+		# A4  = relu(pt.dot(A3, self.W[3])  + self.b[3])
+		# A5  = relu(pt.dot(A4, self.W[4])  + self.b[4])
+		# A6  = relu(pt.dot(A5, self.W[5])  + self.b[5])
+		# A7  = relu(pt.dot(A6, self.W[6])  + self.b[6])
 		# A8  = relu(pt.dot(A7, self.W[7])  + self.b[7])
 		# A9  = relu(pt.dot(A8, self.W[8])  + self.b[8])
 		# A10 = relu(pt.dot(A9, self.W[9])  + self.b[9])
@@ -205,7 +205,7 @@ class MLP_phot:
 		# A12 = relu(pt.dot(A11, self.W[11])  + self.b[11])
 		# A13 = relu(pt.dot(A12, self.W[12])  + self.b[12])
 		# Final linear output (no activation)
-		targets = pt.dot(A7, self.W[7]) + self.b[7]
+		targets = pt.dot(A3, self.W[3]) + self.b[3]
 
 		return targets
 
@@ -335,17 +335,17 @@ class MLP_teff:
 if __name__ == "__main__":
 	import bisect
 
-	dir_base = "/home/jolivares/Models/PARSEC/Gaia_EDR3_15-400Myr/"
+	dir_base = "/home/jolivares/Models/PARSEC/Gaia_EDR3/100-500Myr/"
 
 	file_iso      = dir_base + "output.dat"
-	file_mlp_phot = dir_base + "MLPs/Phot_l7_s512/mlp.pkl"
+	file_mlp_phot = dir_base + "MLPs/Phot_l3_s1024/mlp.pkl"
 	file_mlp_teff = dir_base + "MLPs/Teff_l16_s512/mlp.pkl"
 
 	mlp_phot = MLP_phot(file_mlp=file_mlp_phot)
-	mlp_teff = MLP_teff(file_mlp=file_mlp_teff)
+	# mlp_teff = MLP_teff(file_mlp=file_mlp_teff)
 
 	# Example: load an isochrone from a parametrized CSV and overlay predicted photometry
-	age = 120.
+	age = 50.
 	max_label = 1
 
 	df_iso = pn.read_csv(file_iso,
@@ -372,12 +372,12 @@ if __name__ == "__main__":
 		num=n_stars)
 	#--------------------------------------------------
 
-	teff = mlp_teff(age,mass,n_stars)
+	# teff = mlp_teff(age,mass,n_stars)
 	phot = mlp_phot(age,mass,n_stars)
 
 	df_prd = pn.DataFrame(data=phot.eval(),columns=mlp_phot.targets)
 	df_prd["Mini"] = mass
-	df_prd["Teff"] = teff.eval().flatten()
+	# df_prd["Teff"] = teff.eval().flatten()
 
 	# Simple diagnostic plot to visually compare trained MLP predictions with input isochrone
 	for target in mlp_phot.targets:
@@ -397,20 +397,20 @@ if __name__ == "__main__":
 		ax.set_ylabel(target)
 		plt.show()
 
-	for target in mlp_phot.targets:
-		plt.figure(0)
-		ax = sns.scatterplot(data=df_iso,
-							x="Teff",y=target,
-							legend=True,
-							zorder=0)
-		ax = sns.lineplot(data=df_prd,
-							x="Teff",y=target,
-							legend=True,
-							sort=False,
-							zorder=1,
-							ax=ax)
+	# for target in mlp_phot.targets:
+	# 	plt.figure(0)
+	# 	ax = sns.scatterplot(data=df_iso,
+	# 						x="Teff",y=target,
+	# 						legend=True,
+	# 						zorder=0)
+	# 	ax = sns.lineplot(data=df_prd,
+	# 						x="Teff",y=target,
+	# 						legend=True,
+	# 						sort=False,
+	# 						zorder=1,
+	# 						ax=ax)
 
-		ax.set_xlabel("Teff [K]")
-		ax.set_ylabel(target)
-		ax.invert_yaxis()
-		plt.show()
+	# 	ax.set_xlabel("Teff [K]")
+	# 	ax.set_ylabel(target)
+	# 	ax.invert_yaxis()
+	# 	plt.show()

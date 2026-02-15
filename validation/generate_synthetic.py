@@ -4,7 +4,7 @@ from Amasijo import Amasijo
 
 model         = "PARSEC"
 dir_inputs    = "/home/jolivares/Repos/Huehueti/validation/synthetic/{0}/inputs/".format(model)
-dir_mlps      = "/home/jolivares/Models/PARSEC/Gaia_EDR3_15-400Myr/MLPs/"
+dir_mlps      = "/home/jolivares/Models/PARSEC/Gaia_EDR3/15-400Myr/MLPs/"
 file_mlp_phot = dir_mlps+"Phot_l7_s512/mlp.pkl"
 file_mlp_teff = dir_mlps+"Teff_l16_s512/mlp.pkl"
 file_mlp_logg = dir_mlps+"Logg_l13_s256/mlp.pkl"

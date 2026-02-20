@@ -254,6 +254,7 @@ class Huehueti:
 		#------------------------------------------------------
 
 	def setup(self,
+		model: str = "base",
 		parameters: Dict[str,float],
 		prior: Dict[str, Any]
 	) -> None:
@@ -356,25 +357,89 @@ class Huehueti:
 			spectroscopy_ix = None
 		#---------------------------------------------------------------------------------
 
-		self.Model = Model_v0(
-						mlp_phot=self.mlp_phot,
-						mlp_teff=self.mlp_teff,
-						parameters = parameters,
-						prior = prior,
-						identifiers = identifiers,
-						astrometry_names = astrometry_names,
-						astrometry_mu = astrometry_mu,
-						astrometry_sd = astrometry_sd,
-						astrometry_ix = astrometry_ix,
-						photometry_names = photometry_names,
-						photometry_mu = photometry_mu,
-						photometry_sd = photometry_sd,
-						photometry_ix = photometry_ix,
-						spectroscopy_names = spectroscopy_names,
-						spectroscopy_mu = spectroscopy_mu,
-						spectroscopy_sd = spectroscopy_sd,
-						spectroscopy_ix = spectroscopy_ix
-						)
+		if model == "base":
+			self.Model = Model_v0(
+							mlp_phot=self.mlp_phot,
+							mlp_teff=self.mlp_teff,
+							parameters = parameters,
+							prior = prior,
+							identifiers = identifiers,
+							astrometry_names = astrometry_names,
+							astrometry_mu = astrometry_mu,
+							astrometry_sd = astrometry_sd,
+							astrometry_ix = astrometry_ix,
+							photometry_names = photometry_names,
+							photometry_mu = photometry_mu,
+							photometry_sd = photometry_sd,
+							photometry_ix = photometry_ix,
+							spectroscopy_names = spectroscopy_names,
+							spectroscopy_mu = spectroscopy_mu,
+							spectroscopy_sd = spectroscopy_sd,
+							spectroscopy_ix = spectroscopy_ix
+							)
+		elif model == "outliers":
+			self.Model = Model_v1(
+							mlp_phot=self.mlp_phot,
+							mlp_teff=self.mlp_teff,
+							parameters = parameters,
+							prior = prior,
+							identifiers = identifiers,
+							astrometry_names = astrometry_names,
+							astrometry_mu = astrometry_mu,
+							astrometry_sd = astrometry_sd,
+							astrometry_ix = astrometry_ix,
+							photometry_names = photometry_names,
+							photometry_mu = photometry_mu,
+							photometry_sd = photometry_sd,
+							photometry_ix = photometry_ix,
+							spectroscopy_names = spectroscopy_names,
+							spectroscopy_mu = spectroscopy_mu,
+							spectroscopy_sd = spectroscopy_sd,
+							spectroscopy_ix = spectroscopy_ix
+							)
+		elif model == "extinction":
+			self.Model = Model_v2(
+							mlp_phot=self.mlp_phot,
+							mlp_teff=self.mlp_teff,
+							parameters = parameters,
+							prior = prior,
+							identifiers = identifiers,
+							astrometry_names = astrometry_names,
+							astrometry_mu = astrometry_mu,
+							astrometry_sd = astrometry_sd,
+							astrometry_ix = astrometry_ix,
+							photometry_names = photometry_names,
+							photometry_mu = photometry_mu,
+							photometry_sd = photometry_sd,
+							photometry_ix = photometry_ix,
+							spectroscopy_names = spectroscopy_names,
+							spectroscopy_mu = spectroscopy_mu,
+							spectroscopy_sd = spectroscopy_sd,
+							spectroscopy_ix = spectroscopy_ix
+							)
+		elif (model == "outliers+extinction") or (model == "extinction+outliers"):
+			self.Model = Model_v3(
+							mlp_phot=self.mlp_phot,
+							mlp_teff=self.mlp_teff,
+							parameters = parameters,
+							prior = prior,
+							identifiers = identifiers,
+							astrometry_names = astrometry_names,
+							astrometry_mu = astrometry_mu,
+							astrometry_sd = astrometry_sd,
+							astrometry_ix = astrometry_ix,
+							photometry_names = photometry_names,
+							photometry_mu = photometry_mu,
+							photometry_sd = photometry_sd,
+							photometry_ix = photometry_ix,
+							spectroscopy_names = spectroscopy_names,
+							spectroscopy_mu = spectroscopy_mu,
+							spectroscopy_sd = spectroscopy_sd,
+							spectroscopy_ix = spectroscopy_ix
+							)
+		else:
+			sys.exit("Unsupported model! Do you mean: base, outliers, extinction or outliers+extinction?")
+			
 		for key,value in self.Model.initial_point().items():
 			assert np.isfinite(value).all(),"Initial point error at {0}\n{1}".format(key,value)
 		#-------------------------------------------------------------------------------------
@@ -1282,23 +1347,17 @@ if __name__ == "__main__":
 			"family": "Exponential",
 			"scale" : 5.
 			},
-		"photometric_dispersion":{
-			"family": "Exponential",
-			"sigma" : 0.01,
-			"beta"  : 100.0
+		"extinction":{
+			"family": "Uniform",
+			"Rv":3.1,
+			"lower":0.0,
+			"upper":5.0,
+			"mu":2.0,
+			"sigma" : 0.1,
 			},
-		"astrometric_outliers":{
-			"weights" : [90,10],
-			"lower"   : 50.0,
-			"upper"   : 150.0,
-			"beta"    : 1/20.
-		},
-		"photometric_outliers":{
-			"weights" : [90,10],
-			"lower"   : 0.0,
-			"upper"   : 30.0,
-			"beta"    : 1/20.
-		},
+		"outliers":{
+			"beta": 1/10.
+		}
 	}
 
 	hue = Huehueti(

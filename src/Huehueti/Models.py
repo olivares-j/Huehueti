@@ -33,6 +33,17 @@ def apparent_to_absolute(m, distance):
     return m - 5.*np.log10(distance) + 5.
 
 
+def ccm89_for_gaia(Av,Rv):
+	""" Optimized for Gaia bands in order, Gmag, G_BPmag, and G_RPmag"""
+	waves_invm = 1.e4/pytensor.shared([6230.0,5050.0,7730.0]) # Angstroms to Inverse Microns
+	"""ccm89 a, b parameters for 1.1 < x < 3.3 (optical)"""
+	y = waves_invm - 1.82
+	a = ((((((0.329990*y - 0.77530)*y + 0.01979)*y + 0.72085)*y - 0.02427)*y - 0.50447)*y + 0.17699)*y + 1.0
+	b = ((((((-2.09002*y + 5.30260)*y - 0.62251)*y - 5.38434)*y + 1.07233)*y + 2.28305)*y + 1.41338)*y
+
+	return Av * (a + b / Rv)
+
+
 
 class Model_v0(Model):
 	"""
@@ -229,7 +240,7 @@ class Model_v0(Model):
 
 class Model_v1(Model):
 	"""
-	Baseline model for photometry and parallax.
+	Model for outliers treated with Student-T
 
 	Key model pieces:
 	- Global parameters: age, distance_central, distance_sd, photometric_dispersion
@@ -348,43 +359,221 @@ class Model_v1(Model):
 							upper=mlp_phot.mass_domain[1],
 							initval=np.full(shape=n_stars,fill_value=mlp_phot.mass_domain[0]+1e-3)
 							)
+		#=========================================================================================
+
+		#===================== Photometry =================================================
+		#--------------------- True value ---------------------------------------------------
+		# Convert absolute photometry to apparent magnitudes using per-source distance
+		photometry = pm.Deterministic('photometry',
+							var=absolute_to_apparent(mlp_phot(age, mass, n_stars),distance),
+							dims=("source_id","photometry_names"))
+		#------------------------------------------------------------------------------------
+
+		# Weakly informative prior for Nu (degrees of freedom)
+		nu = pm.Gamma("nu",
+					alpha=2.0,
+					beta=prior["outliers"]["beta"],
+					dims="photometry_names")
+
+		#-------------- Likelihood --------------------
+		obs_photometry = pm.StudentT('obs_photometry',
+			nu=nu,
+			mu=photometry[photometry_ix], 
+			sigma=photometry_sd[photometry_ix],
+			observed=photometry_mu[photometry_ix])
+		#-----------------------------------------------------
 		#======================================================================================
 
-		#====================== Outliers distribution =========================================
-		# Pb   = parameters[3] # The probability of being an outlier
-		# Yb   = parameters[4] # The mean position of the outlier distribution
-		# sd_b = parameters[5] # The variance of the outlier distribution
-		# sd_m = parameters[6] # The variance added to the photometry
+		#===================== Astrometry ===============================================
+		if astrometry_mu is not None:
+			#------------ True value --------------------------------------------------
+			astrometry = pm.Deterministic("astrometry",
+								var=pytensor.tensor.reshape(1000./distance,(n_stars,1)),
+								dims=("source_id","astrometry_names"))
+			#---------------------------------------------------------------------------
 
-		# #--------------- Extra ---------------------------------------------
-		# prior_Pb   = st.dirichlet(alpha=hyper["alpha_Pb"])
-		# prior_Yb   = st.norm(loc=np.mean(o_phot),scale=5.00*np.std(o_phot))
-		# prior_sd_b = st.gamma(a=2.0,scale=hyper["beta_sd_b"])
-		# prior_sd_m = st.gamma(a=2.0,scale=hyper["beta_sd_m"])
-		#-------------------------------------------------------------------
+			# Weakly informative prior for Nu (degrees of freedom)
+			nu_as = pm.Gamma("nu_as",
+					alpha=2.0,
+					beta=prior["outliers"]["beta"],
+					dims="astrometry_names")
+
+			#----------- Likelihood --------------------------
+			obs_astrometry = pm.StudentT('obs_astrometry',
+				nu=nu_as,
+				mu=astrometry[astrometry_ix], 
+				sigma=astrometry_sd[astrometry_ix], 
+				observed=astrometry_mu[astrometry_ix])
+			#----------------------------------------------------
+		#================================================================================
+
+		#=================== Spectroscopy =============================================
+		if spectroscopy_mu is not None:
+			#---------------- True values -----------------------------------
+			spectroscopy = pm.Deterministic('spectroscopy',
+								var=mlp_teff(age, mass, n_stars),
+								dims=("source_id","spectroscopy_names"))
+			#----------------------------------------------------------------
+
+			# Weakly informative prior for Nu (degrees of freedom)
+			nu_sp = pm.Gamma("nu_sp",
+					alpha=2.0,
+					beta=prior["outliers"]["beta"],
+					dims="spectroscopy_names")
+
+			#-------------- Likelihood ---------------------
+			obs_spectroscopy = pm.StudentT('obs_spectroscopy',
+				nu=nu_sp,
+				mu=spectroscopy[spectroscopy_ix], 
+				sigma=spectroscopy_sd[spectroscopy_ix],
+				observed=spectroscopy_mu[spectroscopy_ix])
+			#-----------------------------------------------
+		#=================================================================================
+
+
+class Model_v2(Model):
+	"""
+	Model with extinction.
+
+	Key model pieces:
+	- Global parameters: age, distance_central, distance_sd, photometric_dispersion
+	- Per-source latent variables: theta (uniform prior), distance (Normal around central),
+	  derived astrometry (parallax) and deterministic predicted photometry (via MLP).
+	- Likelihoods: Normal for astrometry (parallax) and Normal for photometry.
+	"""
+	
+	def __init__(self,
+		mlp_phot,
+		mlp_teff,
+		parameters : dict,
+		prior : dict,
+		identifiers : np.ndarray,
+		astrometry_names : None,
+		astrometry_mu : None,
+		astrometry_sd : None,
+		astrometry_ix : None,
+		photometry_names : None,
+		photometry_mu : None,
+		photometry_sd : None,
+		photometry_ix : None,
+		spectroscopy_names : None,
+		spectroscopy_mu : None,
+		spectroscopy_sd : None,
+		spectroscopy_ix : None,
+		):
+		"""Construct Model_v0.
+
+		Parameters (high level)
+		- mlp: callable MLP(age, theta, n_stars) -> (mass, absolute_photometry)
+		- parameters: dict specifying the model parameters to be inferred.
+		- prior: dict specifying priors for age, distance, dispersions, etc.
+		- identifiers: array of source IDs (used for coords/dims)
+		- astrometry_mu, astrometry_sd: observed astrometric values and errors
+		- astrometry_ix: indices of finite astrometric measurements (used to mask likelihood)
+		- photometry_mu, photometry_sd, photometry_ix: analogous for photometry
+		- astrometric_names, photometric_names: lists of observable names used to set coords
+		"""
+		# Initialize parent Model (name empty) and register coords for ArviZ/InferenceData
+		super().__init__(name="", model=None)
+		self.add_coord("source_id",values=identifiers)
+		if photometry_names is not None:
+			self.add_coord("photometry_names",values=photometry_names)
+		if astrometry_names is not None:
+			self.add_coord("astrometry_names",values=astrometry_names)
+		if spectroscopy_names is not None:
+			self.add_coord("spectroscopy_names",values=spectroscopy_names)
+
+		n_stars = len(identifiers)
+
+		#===================== Age ======================================================
+		if parameters["age"] is None:
+			# Age prior can be either TruncatedNormal or Uniform as provided by caller.
+			if prior["age"]["family"] == 'TruncatedNormal':
+				age = pm.TruncatedNormal('age',
+						mu = prior['age']['mu'],
+						sigma = prior['age']['sigma'],
+						lower = prior['age']['lower'],
+						upper = prior['age']['upper'],
+						)
+			elif prior["age"]["family"] == 'Uniform':
+				age = pm.Uniform('age', 
+						lower = prior['age']['lower'],
+						upper = prior['age']['upper'],)
+			else: 
+				raise KeyError('Unknown age prior distribution')
+		else:
+			age = pm.Deterministic("age",pytensor.shared(parameters["age"]))
+		#===============================================================================
+
+		#================ Distance =====================================================
+		if parameters["distance"] is None:
+			#--------------- Distance_mu --------------------------------------
+			# distance_mu is the cluster-level (global) distance prior
+			if prior['distance_mu']['family'] == "Gaussian":
+				distance_mu = pm.Normal('distance_mu', 
+						mu = prior['distance_mu']['mu'],
+						sigma = prior['distance_mu']['sigma'])
+			elif prior['distance_mu']['family'] == 'Uniform':
+				distance_mu = pm.Uniform('distance_mu',
+						lower = prior['distance_mu']['lower'],
+						upper = prior['distance_mu']['upper'])
+			else: 
+				raise KeyError('Unknown distance_mu prior distribution')
+			#--------------------------------------------------------------
+
+			#------------------- Distance_sd --------------------------------------
+			# distance_sd controls the per-source scatter around central distance
+			if prior["distance_sd"]["family"] == 'Exponential':
+				distance_sd = pm.Exponential('distance_sd',
+										scale=prior["distance_sd"]["scale"])
+			elif prior["distance_sd"]["family"] == 'Gamma':
+				distance_sd = pm.Gamma('distance_sd',
+										alpha=2.0,
+										beta=prior["distance_sd"]["beta"])
+			else:
+				raise KeyError('Unknown distance_sd distribution')
+			#---------------------------------------------------------------------
+			
+			#------------- Distances -------------------------------
+			distance = pm.Normal("distance",
+								mu=distance_mu,
+								sigma=distance_sd,
+								dims="source_id")
+			#----------------------------------------------------------------
+		else:
+			distance = pm.Deterministic("distance",
+								pytensor.shared(parameters["distance"]),
+								dims="source_id")
+		#=====================================================================================
+
+		#====================== Mass ============================================================
+		mass = pm.Uniform('mass',dims="source_id",
+							lower=mlp_phot.mass_domain[0],
+							upper=mlp_phot.mass_domain[1],
+							initval=np.full(shape=n_stars,fill_value=mlp_phot.mass_domain[0]+1e-3)
+							)
 		#======================================================================================
 
 		#===================== Photometry =================================================
-		# # Photometric dispersion is a per-band parameter (dims="photometric_names")
-		# if parameters["photometric_dispersion"] is None:
-		# 	if prior["photometric_dispersion"]["family"] == 'Exponential':
-		# 		photometric_dispersion = pm.Exponential('photometric_dispersion',
-		# 								scale=prior["photometric_dispersion"]["sigma"],
-		# 								dims="photometric_names")
-		# 	elif prior["photometric_dispersion"]["family"] == 'Gamma':
-		# 		photometric_dispersion = pm.Gamma('photometric_dispersion',
-		# 								alpha=2.0,
-		# 								beta=prior["photometric_dispersion"]["beta"],
-		# 								dims="photometric_names")
-		# 	else:
-		# 		raise KeyError('Unknown photometric_dispersion distribution')
-		# else:
-		# 	photometric_dispersion = pm.Deterministic("photometric_dispersion",
-		# 								pytensor.shared(parameters["photometric_dispersion"]))
-		#---------------------------------------------------------------------------------
-
-		# Combine observed photometric uncertainties with model photometric dispersion
-		# photometry_sigma = pm.math.sqrt(photometry_sd**2 + photometric_dispersion**2)
+		#------------------- Extinction prior ------------------------------------
+		if prior["extinction"]["family"] == "Uniform":
+			Av = pm.Uniform("Av",
+						lower=prior["extinction"]["lower"],
+						upper=prior["extinction"]["upper"],
+						dims="source_id")
+		elif prior["extinction"]["family"] == "TruncatedNormal":
+			Av = pm.TruncatedNormal('Av',
+						mu=prior["extinction"]["mu"],
+						sigma=prior["extinction"]["sigma"],
+						lower = prior["extinction"]['lower'],
+						upper = prior["extinction"]['upper'],
+						dims="source_id")
+		elif prior["extinction"]["family"] == "Exponential":
+			Av = pm.Exponential('Av',
+						scale=prior["extinction"]["sigma"],
+						dims="source_id")
+		else:
+			sys.exit("Unsupported extinction family")
 		
 		#--------------------- True value ---------------------------------------------------
 		# Convert absolute photometry to apparent magnitudes using per-source distance
@@ -393,9 +582,15 @@ class Model_v1(Model):
 							dims=("source_id","photometry_names"))
 		#------------------------------------------------------------------------------------
 
+		#--------------- Redden photometry ------------------------------------
+		redden_photometry = pm.Deterministic("redden_photometry",
+							var=photometry + ccm89_for_gaia(Av,prior["extinction"]["Rv"]),
+							dims=("source_id","photometry_names"))
+		#----------------------------------------------------------------------
+
 		#-------------- Likelihood --------------------
 		obs_photometry = pm.Normal('obs_photometry', 
-			mu=photometry[photometry_ix], 
+			mu=redden_photometry[photometry_ix], 
 			sigma=photometry_sd[photometry_ix],
 			observed=photometry_mu[photometry_ix])
 		#-----------------------------------------------------
@@ -427,6 +622,226 @@ class Model_v1(Model):
 
 			#-------------- Likelihood ---------------------
 			obs_spectroscopy = pm.Normal('obs_spectroscopy', 
+				mu=spectroscopy[spectroscopy_ix], 
+				sigma=spectroscopy_sd[spectroscopy_ix],
+				observed=spectroscopy_mu[spectroscopy_ix])
+			#-----------------------------------------------
+		#=================================================================================
+
+
+class Model_v3(Model):
+	"""
+	Model with extinction and outliers.
+
+	Key model pieces:
+	- Global parameters: age, distance_central, distance_sd, photometric_dispersion
+	- Per-source latent variables: theta (uniform prior), distance (Normal around central),
+	  derived astrometry (parallax) and deterministic predicted photometry (via MLP).
+	- Likelihoods: Normal for astrometry (parallax) and Normal for photometry.
+	"""
+	
+	def __init__(self,
+		mlp_phot,
+		mlp_teff,
+		parameters : dict,
+		prior : dict,
+		identifiers : np.ndarray,
+		astrometry_names : None,
+		astrometry_mu : None,
+		astrometry_sd : None,
+		astrometry_ix : None,
+		photometry_names : None,
+		photometry_mu : None,
+		photometry_sd : None,
+		photometry_ix : None,
+		spectroscopy_names : None,
+		spectroscopy_mu : None,
+		spectroscopy_sd : None,
+		spectroscopy_ix : None,
+		):
+		"""Construct Model_v0.
+
+		Parameters (high level)
+		- mlp: callable MLP(age, theta, n_stars) -> (mass, absolute_photometry)
+		- parameters: dict specifying the model parameters to be inferred.
+		- prior: dict specifying priors for age, distance, dispersions, etc.
+		- identifiers: array of source IDs (used for coords/dims)
+		- astrometry_mu, astrometry_sd: observed astrometric values and errors
+		- astrometry_ix: indices of finite astrometric measurements (used to mask likelihood)
+		- photometry_mu, photometry_sd, photometry_ix: analogous for photometry
+		- astrometric_names, photometric_names: lists of observable names used to set coords
+		"""
+		# Initialize parent Model (name empty) and register coords for ArviZ/InferenceData
+		super().__init__(name="", model=None)
+		self.add_coord("source_id",values=identifiers)
+		if photometry_names is not None:
+			self.add_coord("photometry_names",values=photometry_names)
+		if astrometry_names is not None:
+			self.add_coord("astrometry_names",values=astrometry_names)
+		if spectroscopy_names is not None:
+			self.add_coord("spectroscopy_names",values=spectroscopy_names)
+
+		n_stars = len(identifiers)
+
+		#===================== Age ======================================================
+		if parameters["age"] is None:
+			# Age prior can be either TruncatedNormal or Uniform as provided by caller.
+			if prior["age"]["family"] == 'TruncatedNormal':
+				age = pm.TruncatedNormal('age',
+						mu = prior['age']['mu'],
+						sigma = prior['age']['sigma'],
+						lower = prior['age']['lower'],
+						upper = prior['age']['upper'],
+						)
+			elif prior["age"]["family"] == 'Uniform':
+				age = pm.Uniform('age', 
+						lower = prior['age']['lower'],
+						upper = prior['age']['upper'],)
+			else: 
+				raise KeyError('Unknown age prior distribution')
+		else:
+			age = pm.Deterministic("age",pytensor.shared(parameters["age"]))
+		#===============================================================================
+
+		#================ Distance =====================================================
+		if parameters["distance"] is None:
+			#--------------- Distance_mu --------------------------------------
+			# distance_mu is the cluster-level (global) distance prior
+			if prior['distance_mu']['family'] == "Gaussian":
+				distance_mu = pm.Normal('distance_mu', 
+						mu = prior['distance_mu']['mu'],
+						sigma = prior['distance_mu']['sigma'])
+			elif prior['distance_mu']['family'] == 'Uniform':
+				distance_mu = pm.Uniform('distance_mu',
+						lower = prior['distance_mu']['lower'],
+						upper = prior['distance_mu']['upper'])
+			else: 
+				raise KeyError('Unknown distance_mu prior distribution')
+			#--------------------------------------------------------------
+
+			#------------------- Distance_sd --------------------------------------
+			# distance_sd controls the per-source scatter around central distance
+			if prior["distance_sd"]["family"] == 'Exponential':
+				distance_sd = pm.Exponential('distance_sd',
+										scale=prior["distance_sd"]["scale"])
+			elif prior["distance_sd"]["family"] == 'Gamma':
+				distance_sd = pm.Gamma('distance_sd',
+										alpha=2.0,
+										beta=prior["distance_sd"]["beta"])
+			else:
+				raise KeyError('Unknown distance_sd distribution')
+			#---------------------------------------------------------------------
+			
+			#------------- Distances -------------------------------
+			distance = pm.Normal("distance",
+								mu=distance_mu,
+								sigma=distance_sd,
+								dims="source_id")
+			#----------------------------------------------------------------
+		else:
+			distance = pm.Deterministic("distance",
+								pytensor.shared(parameters["distance"]),
+								dims="source_id")
+		#=====================================================================================
+
+		#====================== Mass ============================================================
+		mass = pm.Uniform('mass',
+							lower=mlp_phot.mass_domain[0],
+							upper=mlp_phot.mass_domain[1],
+							initval=np.full(shape=n_stars,fill_value=mlp_phot.mass_domain[0]+1e-3),
+							dims="source_id",
+							)
+		#======================================================================================
+
+		#===================== Photometry =================================================
+		#------------------- Extinction prior ------------------------------------
+		if prior["extinction"]["family"] == "Uniform":
+			Av = pm.Uniform("Av",
+						lower=prior["extinction"]["lower"],
+						upper=prior["extinction"]["upper"],
+						dims="source_id")
+		elif prior["extinction"]["family"] == "TruncatedNormal":
+			Av = pm.TruncatedNormal('Av',
+						mu=prior["extinction"]["mu"],
+						sigma=prior["extinction"]["sigma"],
+						lower = prior["extinction"]['lower'],
+						upper = prior["extinction"]['upper'],
+						dims="source_id")
+		elif prior["extinction"]["family"] == "Exponential":
+			Av = pm.Exponential('Av',
+						scale=prior["extinction"]["sigma"],
+						dims="source_id")
+		else:
+			sys.exit("Unsupported extinction family")
+		
+		#--------------------- True value ---------------------------------------------------
+		# Convert absolute photometry to apparent magnitudes using per-source distance
+		photometry = pm.Deterministic('photometry',
+							var=absolute_to_apparent(mlp_phot(age, mass, n_stars),distance),
+							dims=("source_id","photometry_names"))
+		#------------------------------------------------------------------------------------
+
+		#--------------- Redden photometry ------------------------------------
+		redden_photometry = pm.Deterministic("redden_photometry",
+							var=photometry + ccm89_for_gaia(Av,prior["extinction"]["Rv"]),
+							dims=("source_id","photometry_names"))
+		#----------------------------------------------------------------------
+
+		# Weakly informative prior for Nu (degrees of freedom)
+		nu = pm.Gamma("nu",
+					alpha=2.0,
+					beta=prior["outliers"]["beta"],
+					dims="photometry_names")
+
+		#-------------- Likelihood --------------------
+		obs_photometry = pm.StudentT('obs_photometry',
+			nu=nu,
+			mu=redden_photometry[photometry_ix], 
+			sigma=photometry_sd[photometry_ix],
+			observed=photometry_mu[photometry_ix])
+		#-----------------------------------------------------
+		#======================================================================================
+
+		#===================== Astrometry ===============================================
+		if astrometry_mu is not None:
+			#------------ True value --------------------------------------------------
+			astrometry = pm.Deterministic("astrometry",
+								var=pytensor.tensor.reshape(1000./distance,(n_stars,1)),
+								dims=("source_id","astrometry_names"))
+			#---------------------------------------------------------------------------
+
+			# Weakly informative prior for Nu (degrees of freedom)
+			nu_as = pm.Gamma("nu_as",
+					alpha=2.0,
+					beta=prior["outliers"]["beta"],
+					dims="astrometry_names")
+
+			#----------- Likelihood --------------------------
+			obs_astrometry = pm.StudentT('obs_astrometry',
+				nu=nu_as,
+				mu=astrometry[astrometry_ix], 
+				sigma=astrometry_sd[astrometry_ix], 
+				observed=astrometry_mu[astrometry_ix])
+			#----------------------------------------------------
+		#================================================================================
+
+		#=================== Spectroscopy =============================================
+		if spectroscopy_mu is not None:
+			#---------------- True values -----------------------------------
+			spectroscopy = pm.Deterministic('spectroscopy',
+								var=mlp_teff(age, mass, n_stars),
+								dims=("source_id","spectroscopy_names"))
+			#----------------------------------------------------------------
+
+			# Weakly informative prior for Nu (degrees of freedom)
+			nu_sp = pm.Gamma("nu_sp",
+					alpha=2.0,
+					beta=prior["outliers"]["beta"],
+					dims="spectroscopy_names")
+
+			#-------------- Likelihood ---------------------
+			obs_spectroscopy = pm.StudentT('obs_spectroscopy',
+				nu=nu_sp,
 				mu=spectroscopy[spectroscopy_ix], 
 				sigma=spectroscopy_sd[spectroscopy_ix],
 				observed=spectroscopy_mu[spectroscopy_ix])

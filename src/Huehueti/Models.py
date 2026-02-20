@@ -257,7 +257,7 @@ class Model_v1(Model):
 		spectroscopy_sd : None,
 		spectroscopy_ix : None,
 		):
-		"""Construct Model_v0.
+		"""Construct Model_v1.
 
 		Parameters (high level)
 		- mlp: callable MLP(age, theta, n_stars) -> (mass, absolute_photometry)
@@ -348,6 +348,20 @@ class Model_v1(Model):
 							upper=mlp_phot.mass_domain[1],
 							initval=np.full(shape=n_stars,fill_value=mlp_phot.mass_domain[0]+1e-3)
 							)
+		#======================================================================================
+
+		#====================== Outliers distribution =========================================
+		# Pb   = parameters[3] # The probability of being an outlier
+		# Yb   = parameters[4] # The mean position of the outlier distribution
+		# sd_b = parameters[5] # The variance of the outlier distribution
+		# sd_m = parameters[6] # The variance added to the photometry
+
+		# #--------------- Extra ---------------------------------------------
+		# prior_Pb   = st.dirichlet(alpha=hyper["alpha_Pb"])
+		# prior_Yb   = st.norm(loc=np.mean(o_phot),scale=5.00*np.std(o_phot))
+		# prior_sd_b = st.gamma(a=2.0,scale=hyper["beta_sd_b"])
+		# prior_sd_m = st.gamma(a=2.0,scale=hyper["beta_sd_m"])
+		#-------------------------------------------------------------------
 		#======================================================================================
 
 		#===================== Photometry =================================================

@@ -338,14 +338,14 @@ if __name__ == "__main__":
 	dir_base = "/home/jolivares/Models/PARSEC/Gaia_EDR3/100-500Myr/"
 
 	file_iso      = dir_base + "output.dat"
-	file_mlp_phot = dir_base + "MLPs/Phot_l3_s1024/mlp.pkl"
+	file_mlp_phot = dir_base + "MLPs/Phot_l4_s1024/mlp.pkl"
 	file_mlp_teff = dir_base + "MLPs/Teff_l16_s512/mlp.pkl"
 
 	mlp_phot = MLP_phot(file_mlp=file_mlp_phot)
 	# mlp_teff = MLP_teff(file_mlp=file_mlp_teff)
 
 	# Example: load an isochrone from a parametrized CSV and overlay predicted photometry
-	age = 50.
+	age = 120.
 	max_label = 1
 
 	df_iso = pn.read_csv(file_iso,

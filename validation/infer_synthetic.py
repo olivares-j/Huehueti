@@ -3,7 +3,7 @@ import os
 import time
 import dill
 
-os.environ['CUDA_VISIBLE_DEVICES'] = "0"
+os.environ['CUDA_VISIBLE_DEVICES'] = "-1"
 
 sys.path.append("/home/jolivares/Repos/Huehueti/src/Huehueti/")
 from Huehueti import Huehueti
@@ -15,10 +15,10 @@ dir_base       = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/{0}
 file_mlp_phot  = "/home/jolivares/Models/PARSEC/Gaia_EDR3/{0}/MLPs/Phot_{1}/mlp.pkl".format(age_range,case)
 file_mlp_teff  = None #"/home/jolivares/Models/PARSEC/Gaia_EDR3/15-400Myr/MLPs/Teff_l16_s512/mlp.pkl"
 
-list_of_ages      = [140] #list(range(60,160,20))
-list_of_distances = [50]
-list_of_n_stars   = [10]
-list_of_seeds     = [5]
+list_of_ages      = [120] #list(range(60,160,20))
+list_of_distances = [100] #[50,100,200,400]
+list_of_n_stars   = [10] #[10,20]
+list_of_seeds     = [4] #[0,1,2,3,4,5] # Devices: 0,1,2 -> 0 3,4,5 -> 1
 
 dir_inputs  = dir_base + "inputs/"
 dir_outputs = dir_base + "{0}/".format(case)
@@ -34,9 +34,13 @@ parameters = {"age":None}
 hyperparameters = {"distance":"distance"}
 
 chains ={
-	60:None,80:[1,2,3],100:[1,2],120:[3],140:[1,2,3],
-	160:None,180:None,200:None,
-	220:None,240:None,260:None,280:None,300:None,3200:None,340:None,360:None,380:None,400:None
+	60:None,
+	80:[0,2,3],
+	100:[1,2],
+	120:[1],
+	140:[1],
+	# 160:None,180:None,200:None,
+	# 220:None,240:None,260:None,280:None,300:None,3200:None,340:None,360:None,380:None,400:None
 }
 
 
@@ -116,7 +120,7 @@ for seed in list_of_seeds:
 					prior = set_prior(age,distance)
 				)
 				hue.run(
-					target_accept=0.65,
+					target_accept=0.85,
 					init_method="advi",
 					init_iters=int(5e5),
 					nuts_sampler="numpyro",

@@ -36,13 +36,13 @@ dir_fig  = "/home/jolivares/Dropbox/MisArticulos/BayesianAges/Isochrones/Method/
 cases = ["l3_s1100"] #["l3_s900","l3_s1100","l3_s1300","l3_s1400","l3_s1500","l3_s1700"]
 
 list_of_ages      = list(range(60,160,20))
-list_of_distances = [50]
-list_of_n_stars   = [10]
-list_of_seeds     = [0,1,2,3,4,5]
+list_of_distances = [50,100]
+list_of_n_stars   = [10,20]
+list_of_seeds     = [5]
 
 do_process = True
 do_plt_grp = True
-do_plt_src = True
+do_plt_src = False
 
 file_data_all = dir_base + "data_cases.h5"
 file_plt_grp  = dir_fig + "Group-level.pdf"
@@ -231,16 +231,16 @@ if do_plt_grp:
 	pdf = PdfPages(filename=file_plt_grp)
 	for st in sts_grp:
 		fg = sns.FacetGrid(data=df_grp,
-						col="Case",
+						col="distance",
 						sharey=True,
 						sharex=True,
 						margin_titles=True,
 						col_wrap=6,
-						# hue="seed",
-						hue="n_stars"
+						hue="n_stars",
+						# hue="n_stars"
 						)
-		# fg.map(sns.scatterplot,"age",st["key"])
-		fg.map(sns.lineplot,"age",st["key"])
+		fg.map(sns.scatterplot,"age",st["key"])
+		# fg.map(sns.lineplot,"age",st["key"])
 		fg.set_xlabels("Age [Myr]")
 		fg.set_ylabels(st["name"])
 		fg.add_legend()

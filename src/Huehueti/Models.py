@@ -781,7 +781,7 @@ class Model_v3(Model):
 		# Convert absolute photometry to apparent magnitudes using per-source distance
 		photometry = pm.Deterministic('photometry',
 							var=absolute_to_apparent(mlp_phot(age, mass, n_stars),distance) +
-							ccm89_for_gaia(Av,prior["extinction"]["Rv"]),
+							ccm89_for_gaia(Av),
 							dims=("source_id","photometry_names"))
 		#------------------------------------------------------------------------------------
 

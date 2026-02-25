@@ -8,11 +8,11 @@ os.environ['CUDA_VISIBLE_DEVICES'] = "1"
 sys.path.append("/home/jolivares/Repos/Huehueti/src/Huehueti/")
 from Huehueti import Huehueti
 
-model     = "extinction"
+model     = "outliers+extinction"
 case      = "l3_s1100"
 age_range = "50-150Myr"
 
-dir_base       = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/{0}/{1}/".format(age_range,model)
+dir_base       = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/{0}/extinction/".format(age_range)
 file_mlp_phot  = "/home/jolivares/Models/PARSEC/Gaia_EDR3/{0}/MLPs/Phot_{1}/mlp.pkl".format(age_range,case)
 file_mlp_teff  = None #"/home/jolivares/Models/PARSEC/Gaia_EDR3/15-400Myr/MLPs/Teff_l16_s512/mlp.pkl"
 
@@ -117,7 +117,7 @@ for seed in list_of_seeds:
 				hue.run(
 					target_accept=0.85,
 					init_method="advi",
-					init_iters=int(5e5),
+					init_iters=int(1e6),
 					nuts_sampler="numpyro",
 					tuning_iters=int(4e3),
 					sample_iters=int(2e3),

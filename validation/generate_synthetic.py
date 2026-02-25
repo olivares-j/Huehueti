@@ -85,7 +85,7 @@ def isochrones_args(age,distance):
 	args = {
 		"model":"PARSEC",
 		"age": float(age),
-		"Av_limits":[0.0,0.0],
+		"Av_limits":[0.0,5.0],
 		"MIST_args":{
 			"mass_limits":mass_limits(age,distance),
 			"metallicity":0.012,

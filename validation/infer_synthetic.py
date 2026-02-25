@@ -3,25 +3,26 @@ import os
 import time
 import dill
 
-os.environ['CUDA_VISIBLE_DEVICES'] = "-1"
+os.environ['CUDA_VISIBLE_DEVICES'] = "1"
 
 sys.path.append("/home/jolivares/Repos/Huehueti/src/Huehueti/")
 from Huehueti import Huehueti
 
-case ="l3_s1100"
+model     = "extinction"
+case      = "l3_s1100"
 age_range = "50-150Myr"
 
-dir_base       = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/{0}/".format(age_range)
+dir_base       = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/{0}/{1}/".format(age_range,model)
 file_mlp_phot  = "/home/jolivares/Models/PARSEC/Gaia_EDR3/{0}/MLPs/Phot_{1}/mlp.pkl".format(age_range,case)
 file_mlp_teff  = None #"/home/jolivares/Models/PARSEC/Gaia_EDR3/15-400Myr/MLPs/Teff_l16_s512/mlp.pkl"
 
-list_of_ages      = [120] #list(range(60,160,20))
-list_of_distances = [100] #[50,100,200,400]
+list_of_ages      = [60] #list(range(60,160,20))
+list_of_distances = [50] #[50,100,200,400]
 list_of_n_stars   = [10] #[10,20]
-list_of_seeds     = [4] #[0,1,2,3,4,5] # Devices: 0,1,2 -> 0 3,4,5 -> 1
+list_of_seeds     = [0] #[0,1,2,3,4,5]
 
 dir_inputs  = dir_base + "inputs/"
-dir_outputs = dir_base + "{0}/".format(case)
+dir_outputs = dir_base + "outputs/" #{0}/".format(case)
 base_name   = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 
 absolute_photometry = ['Gmag', 'G_BPmag', 'G_RPmag']
@@ -53,32 +54,25 @@ def set_prior(age,distance):
 		'lower' : 50,
 		'upper' : 150,
 		},
-	'distance' : {
+	'distance_mu' : {
 		'family' : 'Gaussian',
 		'mu' : float(distance),
 		'sigma' : 10.
 		},
-	"distance_dispersion":{
+	"distance_sd":{
 		"family": "Exponential",
 		"scale" : 5.
 		},
-	"photometric_dispersion":{
-		"family": "Exponential",
-		"sigma" : 0.01,
-		"beta"  : 100.0
-		},
-	"astrometric_outliers":{
-		"weights" : [90,10],
-		"lower"   : 50.0,
-		"upper"   : 150.0,
-		"beta"    : 1/20.
-	},
-	"photometric_outliers":{
-		"weights" : [90,10],
-		"lower"   : 0.0,
-		"upper"   : 30.0,
-		"beta"    : 1/20.
-	},
+	"extinction":{
+			"family": "Uniform",
+			"lower":0.0,
+			"upper":5.0,
+			"mu":2.0,
+			"sigma" : 0.1,
+			},
+	"outliers":{
+			"beta": 1/10.
+		}
 	}
 	return priors
 
@@ -98,8 +92,8 @@ for seed in list_of_seeds:
 				file_sts  = dir_out + "Global_statistics.csv"
 				file_time = dir_out + "time.pkl"
 
-				# if os.path.isfile(file_sts):
-				# 	continue
+				if os.path.isfile(file_sts):
+					continue
 					
 				os.makedirs(dir_out,exist_ok=True)
 
@@ -116,6 +110,7 @@ for seed in list_of_seeds:
 					file_data = file_data
 				)
 				hue.setup(
+					model=model,
 					parameters = parameters, 
 					prior = set_prior(age,distance)
 				)
@@ -129,7 +124,7 @@ for seed in list_of_seeds:
 					prior_iters=int(2e3),
 					chains=4
 					)
-				hue.load_trace(chains=chains[age])
+				hue.load_trace()#chains=chains[age])
 				hue.convergence()
 				hue.plot_chains()
 				hue.plot_posterior()
@@ -153,6 +148,6 @@ for seed in list_of_seeds:
 					"time":end_time - start_time
 					}
 
-				# with open(file_time, "wb") as file:
-				# 	dill.dump(data, file)
+				with open(file_time, "wb") as file:
+					dill.dump(data, file)
 				#------------------------------------

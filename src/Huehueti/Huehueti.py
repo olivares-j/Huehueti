@@ -19,7 +19,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 #------------------------------------------------------------------
 
 # Local model/utility imports.
-from Models import absolute_to_apparent,Model_v0
+from Models import absolute_to_apparent,Model_v0, Model_v1, Model_v2, Model_v3
 from MLPs import MLP_phot, MLP_teff
 
 # Configure pandas display to show all columns when printing summaries.
@@ -254,9 +254,9 @@ class Huehueti:
 		#------------------------------------------------------
 
 	def setup(self,
-		model: str = "base",
 		parameters: Dict[str,float],
-		prior: Dict[str, Any]
+		prior: Dict[str, Any],
+		model: str = "base"
 	) -> None:
 		"""
 		Initialize the MLP and probabilistic model.
@@ -356,6 +356,7 @@ class Huehueti:
 			spectroscopy_sd = None
 			spectroscopy_ix = None
 		#---------------------------------------------------------------------------------
+
 
 		if model == "base":
 			self.Model = Model_v0(
@@ -698,7 +699,8 @@ class Huehueti:
 		#------------------------------------------------------------------------
 
 		#------- Build lists of variables grouped by use (source-level vs global) -----------
-		source_variables = list(filter(lambda x: (("mass" in x)
+		source_variables = list(filter(lambda x: (("Av" in x)
+											or ("mass" in x)
 											or ("distance" in x)
 											or ("astrometry" in x)
 											or ("photometry" in x)
@@ -708,6 +710,7 @@ class Huehueti:
 		global_variables = list(filter(lambda x: (("age" in x)
 											or (x == "distance_mu")
 											or (x == "distance_sd")
+											or ("nu" in x)
 											or ("astrometric_" in x)
 											or ("photometric_" in x)
 											or ("spectroscopic_" in x)
@@ -731,6 +734,7 @@ class Huehueti:
 		
 		for var in tmp_sts_src:
 			if not (
+				(var == "Av") or
 				(var == "mass") or 
 				(var == "distance") or
 				("astrometry" in var) or 
@@ -745,6 +749,7 @@ class Huehueti:
 				("age" in var) or 
 				(var == "distance_mu") or 
 				(var == "distance_sd") or
+				("nu" in var) or
 				("photometric_" in var)
 				):
 				global_sts_variables.remove(var)
@@ -754,6 +759,7 @@ class Huehueti:
 			if not (("age" in var)
 				or (var == "distance_mu")
 				or (var == "distance_sd")
+				or ("nu" in var)
 				or ("photometric_" in var)):
 				global_cpp_var.remove(var)
 
@@ -1234,7 +1240,7 @@ class Huehueti:
 		#-------------- Source statistics ----------------------------
 		dfs = []
 		for case in self.source_sts_variables:
-			if case in ["distance","mass","teff"]:
+			if case in ["distance","mass","teff","Av"]:
 				df_tmp  = az.summary(self.ds_posterior,
 							var_names=case,
 							stat_focus = stat_focus,
@@ -1349,7 +1355,6 @@ if __name__ == "__main__":
 			},
 		"extinction":{
 			"family": "Uniform",
-			"Rv":3.1,
 			"lower":0.0,
 			"upper":5.0,
 			"mu":2.0,

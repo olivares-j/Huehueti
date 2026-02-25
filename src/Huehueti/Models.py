@@ -33,17 +33,25 @@ def apparent_to_absolute(m, distance):
     return m - 5.*np.log10(distance) + 5.
 
 
-def ccm89_for_gaia(Av,Rv):
-	""" Optimized for Gaia bands in order, Gmag, G_BPmag, and G_RPmag"""
-	waves_invm = 1.e4/pytensor.shared([6230.0,5050.0,7730.0]) # Angstroms to Inverse Microns
-	"""ccm89 a, b parameters for 1.1 < x < 3.3 (optical)"""
-	y = waves_invm - 1.82
-	a = ((((((0.329990*y - 0.77530)*y + 0.01979)*y + 0.72085)*y - 0.02427)*y - 0.50447)*y + 0.17699)*y + 1.0
-	b = ((((((-2.09002*y + 5.30260)*y - 0.62251)*y - 5.38434)*y + 1.07233)*y + 2.28305)*y + 1.41338)*y
+def ccm89_for_gaia(Av):
+	""" Optimized for Gaia bands in order, Gmag, G_BPmag, and G_RPmag with fixed Rv to 3.1"""
+	# waves_invm = 1.e4/np.array([6230.0,5050.0,7730.0]) # Angstroms to Inverse Microns
 
-	return Av * (a + b / Rv)
+	# """ccm89 a, b parameters for 1.1 < x < 3.3 (optical)"""
+	# y = waves_invm - 1.82
+	# a = ((((((0.329990*y - 0.77530)*y + 0.01979)*y + 0.72085)*y - 0.02427)*y - 0.50447)*y + 0.17699)*y + 1.0
+	# b = ((((((-2.09002*y + 5.30260)*y - 0.62251)*y - 5.38434)*y + 1.07233)*y + 2.28305)*y + 1.41338)*y
+	# abrv = (a + b / Rv)
 
+	# return Av * (a + b / Rv)
 
+	# a = np.array([0.94036655, 1.01577189, 0.80497438])
+	# b = np.array([-0.21954552,  0.28589221, -0.51975359])
+	# abrv = np.array([0.86954541, 1.10799518, 0.63731193])
+	abrv = pytensor.shared(np.array([0.86954541, 1.10799518, 0.63731193]))
+	result = pt.outer(Av, abrv)
+	
+	return result
 
 class Model_v0(Model):
 	"""
@@ -377,7 +385,7 @@ class Model_v1(Model):
 
 		#-------------- Likelihood --------------------
 		obs_photometry = pm.StudentT('obs_photometry',
-			nu=nu,
+			nu=pt.tile(nu,n_stars),
 			mu=photometry[photometry_ix], 
 			sigma=photometry_sd[photometry_ix],
 			observed=photometry_mu[photometry_ix])
@@ -400,7 +408,7 @@ class Model_v1(Model):
 
 			#----------- Likelihood --------------------------
 			obs_astrometry = pm.StudentT('obs_astrometry',
-				nu=nu_as,
+				nu=pt.tile(nu_as,n_stars),
 				mu=astrometry[astrometry_ix], 
 				sigma=astrometry_sd[astrometry_ix], 
 				observed=astrometry_mu[astrometry_ix])
@@ -423,7 +431,7 @@ class Model_v1(Model):
 
 			#-------------- Likelihood ---------------------
 			obs_spectroscopy = pm.StudentT('obs_spectroscopy',
-				nu=nu_sp,
+				nu=pt.tile(nu_sp,n_stars),
 				mu=spectroscopy[spectroscopy_ix], 
 				sigma=spectroscopy_sd[spectroscopy_ix],
 				observed=spectroscopy_mu[spectroscopy_ix])
@@ -578,22 +586,17 @@ class Model_v2(Model):
 		#--------------------- True value ---------------------------------------------------
 		# Convert absolute photometry to apparent magnitudes using per-source distance
 		photometry = pm.Deterministic('photometry',
-							var=absolute_to_apparent(mlp_phot(age, mass, n_stars),distance),
+							var=absolute_to_apparent(mlp_phot(age, mass, n_stars),distance) +
+							ccm89_for_gaia(Av),
 							dims=("source_id","photometry_names"))
 		#------------------------------------------------------------------------------------
 
-		#--------------- Redden photometry ------------------------------------
-		redden_photometry = pm.Deterministic("redden_photometry",
-							var=photometry + ccm89_for_gaia(Av,prior["extinction"]["Rv"]),
-							dims=("source_id","photometry_names"))
-		#----------------------------------------------------------------------
-
 		#-------------- Likelihood --------------------
 		obs_photometry = pm.Normal('obs_photometry', 
-			mu=redden_photometry[photometry_ix], 
+			mu=photometry[photometry_ix], 
 			sigma=photometry_sd[photometry_ix],
 			observed=photometry_mu[photometry_ix])
-		#-----------------------------------------------------
+		#----------------------------------------------
 		#======================================================================================
 
 		#===================== Astrometry ===============================================
@@ -777,15 +780,10 @@ class Model_v3(Model):
 		#--------------------- True value ---------------------------------------------------
 		# Convert absolute photometry to apparent magnitudes using per-source distance
 		photometry = pm.Deterministic('photometry',
-							var=absolute_to_apparent(mlp_phot(age, mass, n_stars),distance),
+							var=absolute_to_apparent(mlp_phot(age, mass, n_stars),distance) +
+							ccm89_for_gaia(Av,prior["extinction"]["Rv"]),
 							dims=("source_id","photometry_names"))
 		#------------------------------------------------------------------------------------
-
-		#--------------- Redden photometry ------------------------------------
-		redden_photometry = pm.Deterministic("redden_photometry",
-							var=photometry + ccm89_for_gaia(Av,prior["extinction"]["Rv"]),
-							dims=("source_id","photometry_names"))
-		#----------------------------------------------------------------------
 
 		# Weakly informative prior for Nu (degrees of freedom)
 		nu = pm.Gamma("nu",
@@ -795,8 +793,8 @@ class Model_v3(Model):
 
 		#-------------- Likelihood --------------------
 		obs_photometry = pm.StudentT('obs_photometry',
-			nu=nu,
-			mu=redden_photometry[photometry_ix], 
+			nu=pt.tile(nu,n_stars),
+			mu=photometry[photometry_ix], 
 			sigma=photometry_sd[photometry_ix],
 			observed=photometry_mu[photometry_ix])
 		#-----------------------------------------------------
@@ -818,7 +816,7 @@ class Model_v3(Model):
 
 			#----------- Likelihood --------------------------
 			obs_astrometry = pm.StudentT('obs_astrometry',
-				nu=nu_as,
+				nu=pt.tile(nu_as,n_stars),
 				mu=astrometry[astrometry_ix], 
 				sigma=astrometry_sd[astrometry_ix], 
 				observed=astrometry_mu[astrometry_ix])
@@ -841,7 +839,7 @@ class Model_v3(Model):
 
 			#-------------- Likelihood ---------------------
 			obs_spectroscopy = pm.StudentT('obs_spectroscopy',
-				nu=nu_sp,
+				nu=pt.tile(nu_sp,n_stars),
 				mu=spectroscopy[spectroscopy_ix], 
 				sigma=spectroscopy_sd[spectroscopy_ix],
 				observed=spectroscopy_mu[spectroscopy_ix])

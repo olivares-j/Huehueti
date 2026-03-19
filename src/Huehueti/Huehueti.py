@@ -20,7 +20,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 # Local model/utility imports.
 from Models import absolute_to_apparent,Model_v0, Model_v1, Model_v2, Model_v3
-from MLPs import MLP_phot, MLP_teff
+from MLPs import MLP_phot
 
 # Configure pandas display to show all columns when printing summaries.
 pn.set_option('display.max_columns', None)
@@ -41,17 +41,15 @@ class Huehueti:
 	"""
 	def __init__(self,
 		dir_out: str,
-		file_mlp_phot: str,
-		file_mlp_teff: str,
 		observables: dict,
 		hyperparameters: dict,
-		absolute_photometry: list
+		absolute_photometry: list,
+		files_mlps:dict = None,
 	) -> None:
 		# Output directory and path to MLP file
 		self.dir_out = dir_out
-		self.file_mlp_phot = file_mlp_phot
-		self.file_mlp_teff = file_mlp_teff
 		self.absolute_photometry = absolute_photometry
+		self.files_mlps = files_mlps
 
 		# File paths for common outputs produced by the class methods.
 		# These are constructed relative to dir_out.
@@ -149,20 +147,17 @@ class Huehueti:
 		distance : float
 			Distance in parsecs used to transform absolute magnitude limits to apparent.
 		"""
-		try:
-			# The MLP is serialized with dill and contains a key "phot_min"
-			# which stores the minimum absolute magnitude (brightest) the NN covers.
-			with open(self.file_mlp_phot, 'rb') as file:
+		phot_min = []
+		for name,file_mlp in self.files_mlps.items():
+			with open(file_mlp, 'rb') as file:
 				mlp = dill.load(file)
-				phot_min = mlp["phot_min"]
-		except FileNotFoundError as error:
-			# Re-raise with a clearer message for the caller.
-			raise FileNotFoundError("The isochrone model cannot be found. Please, provide a valid path.") from error
-		else:
-			# Convert absolute magnitude limit to apparent magnitude at given distance:
-			# m = M + 5 log10(d) - 5
-			phot_lim = phot_min + 5.0*np.log10(distance) - 5.0
-			return phot_lim
+				phot_min.append(mlp["phot_min"][name])
+
+		
+		# Convert absolute magnitude limit to apparent magnitude at given distance:
+		# m = M + 5 log10(d) - 5
+		phot_lim = phot_min + 5.0*np.log10(distance) - 5.0
+		return phot_lim
 
 	def load_data(self, 
 		file_data: str,
@@ -196,7 +191,7 @@ class Huehueti:
 		# Estimate an average distance from parallax to compute an apparent magnitude
 		# limit for rejection. 1000/parallax to convert mas->pc (parallax must be in mas).
 		distance = df["distance"].mean() if "distance" in df.columns else np.mean(1000/df["parallax"])
-		phot_lim = self._isochrone_photometric_limits(distance=distance).to_numpy()
+		phot_lim = self._isochrone_photometric_limits(distance=distance)
 
 		# For each star, keep it if ALL photometric bands are fainter than the phot_lim
 		# or if the measurement is missing (NaN). The mask_valid ends up boolean per-source.
@@ -256,7 +251,7 @@ class Huehueti:
 	def setup(self,
 		parameters: Dict[str,float],
 		prior: Dict[str, Any],
-		model: str = "base"
+		model: str = "base",
 	) -> None:
 		"""
 		Initialize the MLP and probabilistic model.
@@ -270,19 +265,17 @@ class Huehueti:
 		starting_points : optional initial values (currently unused)
 		"""
 		#----------------- Initialize NNs -------------------
-		self.mlp_phot = MLP_phot(file_mlp=self.file_mlp_phot)
-		self.mlp_teff = None #MLP_teff(file_mlp=self.file_mlp_teff)
+		self.mlp_phot = MLP_phot(files_mlps=self.files_mlps,
+			features=["logAge","logL","logTe"],
+			targets=self.absolute_photometry)
 		#----------------------------------------------------
 
-		assert self.mlp_phot.targets == self.absolute_photometry,KeyError("Absolute bands do not correspond to PARSEC mlp ones")
-		assert "age" in parameters.keys(), KeyError("The age parameter needs to be set either to float value or None to infer it")
-
+		
 		#------------- Parameters and Prior verification --------------------
+		assert "age" in parameters.keys(), KeyError("The age parameter needs to be set either to float value or None to infer it")
 		if parameters["age"] is None:
 			assert "age"  in prior.keys(), KeyError('Please, provide a prior for the age parameter')
 			assert prior["age"]["family"]  in ["TruncatedNormal","Uniform"], KeyError("Unknown family of age prior")
-			assert prior["age"]["lower"] >= self.mlp_phot.age_domain[0],"Error at the lower limit of the age prior! Verify mlp_phot file"
-			assert prior["age"]["upper"] <= self.mlp_phot.age_domain[1],"Error at the upper limit of the age prior! Verify mlp_phot file"
 		elif isinstance(parameters["age"],float()):
 			print("The age parameter will be fixed to: {0} Myr".format(parameters["age"]))
 		else:
@@ -361,7 +354,6 @@ class Huehueti:
 		if model == "base":
 			self.Model = Model_v0(
 							mlp_phot=self.mlp_phot,
-							mlp_teff=self.mlp_teff,
 							parameters = parameters,
 							prior = prior,
 							identifiers = identifiers,
@@ -381,7 +373,6 @@ class Huehueti:
 		elif model == "outliers":
 			self.Model = Model_v1(
 							mlp_phot=self.mlp_phot,
-							mlp_teff=self.mlp_teff,
 							parameters = parameters,
 							prior = prior,
 							identifiers = identifiers,
@@ -401,7 +392,6 @@ class Huehueti:
 		elif model == "extinction":
 			self.Model = Model_v2(
 							mlp_phot=self.mlp_phot,
-							mlp_teff=self.mlp_teff,
 							parameters = parameters,
 							prior = prior,
 							identifiers = identifiers,
@@ -421,7 +411,6 @@ class Huehueti:
 		elif (model == "outliers+extinction") or (model == "extinction+outliers"):
 			self.Model = Model_v3(
 							mlp_phot=self.mlp_phot,
-							mlp_teff=self.mlp_teff,
 							parameters = parameters,
 							prior = prior,
 							identifiers = identifiers,
@@ -700,7 +689,8 @@ class Huehueti:
 
 		#------- Build lists of variables grouped by use (source-level vs global) -----------
 		source_variables = list(filter(lambda x: (("Av" in x)
-											or ("mass" in x)
+											or ("log_lum" in x)
+											or ("tef" in x)
 											or ("distance" in x)
 											or ("astrometry" in x)
 											or ("photometry" in x)
@@ -711,6 +701,7 @@ class Huehueti:
 											or (x == "distance_mu")
 											or (x == "distance_sd")
 											or ("nu" in x)
+											or ("alpha" in x)
 											or ("astrometric_" in x)
 											or ("photometric_" in x)
 											or ("spectroscopic_" in x)
@@ -735,7 +726,8 @@ class Huehueti:
 		for var in tmp_sts_src:
 			if not (
 				(var == "Av") or
-				(var == "mass") or 
+				(var == "log_lum") or 
+				(var == "tef") or 
 				(var == "distance") or
 				("astrometry" in var) or 
 				("photometry" in var) or
@@ -750,6 +742,7 @@ class Huehueti:
 				(var == "distance_mu") or 
 				(var == "distance_sd") or
 				("nu" in var) or
+				("alpha" in var) or
 				("photometric_" in var)
 				):
 				global_sts_variables.remove(var)
@@ -760,6 +753,7 @@ class Huehueti:
 				or (var == "distance_mu")
 				or (var == "distance_sd")
 				or ("nu" in var)
+				or ("alpha" in var)
 				or ("photometric_" in var)):
 				global_cpp_var.remove(var)
 
@@ -901,7 +895,7 @@ class Huehueti:
 				# Add readable units to axis labels where applicable
 				title = ax[0].get_title()
 				if "age" in title:
-					ax[0].set_xlabel("Myr")
+					ax[0].set_xlabel("dex [age]")
 				if "photometric_dispersion" in title:
 					ax[0].set_xlabel("magnitude")
 				#-----------------------------------------------------------
@@ -1037,12 +1031,15 @@ class Huehueti:
 					size=n_samples,replace=False)
 		# Use mean distance from posterior for converting absolute->apparent.
 		distance = np.mean(self.trace.posterior["distance"].values.flatten())
-		mass     = np.linspace(self.mlp_phot.mass_domain[0],self.mlp_phot.mass_domain[1],n_points)
+		log_lums = self.trace.posterior["log_lum"].values.flatten()
+		log_tefs = self.trace.posterior["log_tef"].values.flatten()
+		log_lum = np.linspace(np.min(log_lums),np.max(log_lums),n_points)
+		log_tef = np.linspace(np.min(log_tefs),np.max(log_tefs),n_points)
 
 		dfs_smp = []
 		# For each sampled age, query MLP to produce absolute photometry and convert to apparent.
 		for age in ages:
-			absolute_photometry = self.mlp_phot(age,mass,n_points)
+			absolute_photometry = self.mlp_phot(np.log10(age*1.e6),log_lum,log_tef,n_points)
 			photometry = absolute_to_apparent(absolute_photometry,distance)
 			df_tmp = pn.DataFrame(
 					data=photometry.eval(),
@@ -1050,6 +1047,9 @@ class Huehueti:
 			# The sampled isochrone points are indexed by star and age for plotting.
 			df_tmp.index.name = "star"
 			df_tmp["age"] = age
+			df_tmp["log_lum"] = log_lum
+			df_tmp["log_tef"] = log_tef
+
 			df_tmp.set_index("age",append=True,inplace=True)
 			dfs_smp.append(df_tmp)
 		df_smp = pn.concat(dfs_smp,ignore_index=False)
@@ -1141,15 +1141,18 @@ class Huehueti:
 		assert n_samples <= self.ds_posterior.sizes["draw"], msg_n
 
 		#----- Draw ages from posterior and prepare a theta grid used by MLP -----------
+		#----- Draw ages from posterior and prepare a theta grid used by MLP -----------
 		ages = np.random.choice(self.trace.posterior["age"].values.flatten(),
 					size=n_samples,replace=False)
-		mass     = np.linspace(self.mlp_phot.mass_domain[0],self.mlp_phot.mass_domain[1],n_points)
+		# Use mean distance from posterior for converting absolute->apparent.
+		distance = np.mean(self.trace.posterior["distance"].values.flatten())
+		log_lums = np.linspace(self.mlp_phot.domain["logL"][0],self.mlp_phot.domain["logL"][1],n_points)
+		log_tefs = np.linspace(self.mlp_phot.domain["logTe"][0],self.mlp_phot.domain["logTe"][1],n_points)
 
 		dfs_smp = []
 		# For each sampled age, query MLP to produce absolute photometry and convert to apparent.
 		for age in ages:
-			teff = self.mlp_teff(age,mass,n_points)
-			absolute_photometry = self.mlp_phot(age,mass,n_points)
+			absolute_photometry = self.mlp_phot(np.log10(age*1.e6),log_lums,log_tefs,n_points)
 			photometry = absolute_to_apparent(absolute_photometry,distance)
 			df_tmp = pn.DataFrame(
 					data=photometry.eval(),
@@ -1157,7 +1160,8 @@ class Huehueti:
 			# The sampled isochrone points are indexed by star and age for plotting.
 			df_tmp.index.name = "star"
 			df_tmp["age"] = age
-			df_tmp["teff"] = teff.flatten().eval()
+			df_tmp["log_lum"] = log_lums
+			df_tmp["log_tef"] = log_tefs
 			df_tmp.set_index("age",append=True,inplace=True)
 			dfs_smp.append(df_tmp)
 		df_smp = pn.concat(dfs_smp,ignore_index=False)
@@ -1177,7 +1181,7 @@ class Huehueti:
 
 		#---------------- Color and magnitude  ------------------------
 		# Use a set to avoid duplicated columns if magnitude also in color list
-		columns = [magnitude,"teff"]
+		columns = [magnitude,"log_tef"]
 		#--------------------------------------------------------------
 
 		#---------- Dataframes ------------------
@@ -1197,7 +1201,7 @@ class Huehueti:
 		#----------------- Produce CMD --------------------------------------------
 		plt.figure(0,figsize=figsize)
 		ax = sns.scatterplot(data=df_all,
-						x="teff",
+						x="log_tef",
 						y=magnitude,
 						palette=sns.color_palette(scatter_palette,n_colors=2),
 						hue="Origin",
@@ -1206,7 +1210,7 @@ class Huehueti:
 						zorder=0)
 		# Overplot sampled isochrone lines colored by age (but not showing legend)
 		sns.lineplot(data=df_smp,
-						x="teff",
+						x="log_tef",
 						y=magnitude,
 						palette=sns.color_palette([lines_color], n_samples),
 						hue="age",
@@ -1215,7 +1219,7 @@ class Huehueti:
 						sort=False,
 						zorder=1,
 						ax=ax)
-		ax.set_xlabel("Teff [K]")
+		ax.set_xlabel("log Teff [dex]")
 		ax.set_ylabel("{0} {1}".format(magnitude,"[mag]"))
 		ax.invert_yaxis()  # Magnitudes increase downward in plots
 		ax.set_title("Apparent photometry")
@@ -1240,7 +1244,7 @@ class Huehueti:
 		#-------------- Source statistics ----------------------------
 		dfs = []
 		for case in self.source_sts_variables:
-			if case in ["distance","mass","teff","Av"]:
+			if case in ["distance","log_lum","tef","Av"]:
 				df_tmp  = az.summary(self.ds_posterior,
 							var_names=case,
 							stat_focus = stat_focus,
@@ -1311,25 +1315,33 @@ if __name__ == "__main__":
 	# Example run when executed as a script. These defaults assume a certain
 	# directory layout (data/, mlps/, outputs/) relative to the current working dir.
 
-	age,distance,n_stars,seed = 120,136,10,1
-	dir_base    = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC_tests/"
-	dir_mlps    = "/home/jolivares/Models/PARSEC/Gaia_EDR3/100-500Myr/MLPs/"
+	age,distance,n_stars,seed = 140,50,20,1
+	dir_base    = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/50-150Myr/base/"
+	dir_mlps    = "/home/jolivares/Models/PARSEC/Gaia_EDR3/50-150Myr/Kroupa/"
 
 	dir_inputs  = dir_base + "inputs/"
 	dir_outputs = dir_base + "outputs/"
 	base_name   = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 	file_data = dir_inputs  + base_name.format(age,distance,n_stars,seed)+".csv"
-	dir_out   = dir_outputs + base_name.format(age,distance,n_stars,seed)+"_fixed_distance_numpyro_3/"
+	dir_out   = dir_outputs + base_name.format(age,distance,n_stars,seed)+"_age_logL_logTe_CosineDecay_6_15_441/"
 
-	file_mlp_phot = dir_mlps + "Phot_l3_s1024/mlp.pkl"
-	file_mlp_teff = dir_mlps + "Teff_l16_s512/mlp.pkl"
+	files_mlps = {
+	"G_BPmag":dir_mlps + "MLPs_G_BPmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l6_s15_4/mlp.pkl",
+	"Gmag":   dir_mlps +    "MLPs_Gmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l6_s15_4/mlp.pkl",
+	"G_RPmag":dir_mlps + "MLPs_G_RPmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l6_s15_1/mlp.pkl"
+	}
 
 	os.makedirs(dir_out,exist_ok=True)
 
-	absolute_photometry = ['Gmag', 'G_BPmag', 'G_RPmag']
+	absolute_photometry = ['G_BPmag','Gmag','G_RPmag']
+	# absolute_photometry = ['Gmag','G_RPmag']
 	observables = {
-	"photometry":['phot_g_mean_mag', 'phot_bp_mean_mag', 'phot_rp_mean_mag'],
-	"photometry_error":['phot_g_mean_mag_error', 'phot_bp_mean_mag_error', 'phot_rp_mean_mag_error'],
+	"photometry":[ 'phot_bp_mean_mag','phot_g_mean_mag', 'phot_rp_mean_mag'],
+	"photometry_error":['phot_bp_mean_mag_error','phot_g_mean_mag_error',  'phot_rp_mean_mag_error'],
+	# "photometry":['phot_g_mean_mag', 'phot_rp_mean_mag'],
+	# "photometry_error":['phot_g_mean_mag_error', 'phot_rp_mean_mag_error'],
+	# "spectroscopy":["teff"],
+	# "spectroscopy_error":["teff_error"]
 	}
 
 	parameters = {"age":None}
@@ -1339,10 +1351,12 @@ if __name__ == "__main__":
 	prior = {
 		'age' : {
 			'family' : 'Uniform',
-			'mu'    : 120.,
-			'sigma' : 20.,
-			'lower' : 101,
-			'upper' : 500,
+			},
+		'log_lum' : {
+			'family' : 'Uniform',
+			},
+		'log_tef' : {
+			'family' : 'Uniform',
 			},
 		'distance_mu' : {
 			'family' : 'Gaussian',
@@ -1361,17 +1375,18 @@ if __name__ == "__main__":
 			"sigma" : 0.1,
 			},
 		"outliers":{
-			"beta": 1/10.
+			"family":"StudentT",
+			"beta": 1/10.,
+			"scale":1.0
 		}
 	}
 
 	hue = Huehueti(
 		dir_out = dir_out, 
-		file_mlp_phot=file_mlp_phot,
-		file_mlp_teff=file_mlp_teff,
 		observables=observables,
 		absolute_photometry=absolute_photometry,
 		hyperparameters = hyperparameters,
+		files_mlps=files_mlps
 		)
 	hue.load_data(
 		file_data = file_data
@@ -1392,7 +1407,7 @@ if __name__ == "__main__":
 		tuning_iters=int(2e3),
 		sample_iters=int(2e3),
 		prior_iters=int(2e3),
-		chains=1)
+		chains=2)
 	hue.load_trace()#chains=[0,2,3])
 	hue.convergence()
 	hue.plot_chains()

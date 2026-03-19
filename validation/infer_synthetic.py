@@ -8,21 +8,20 @@ os.environ['CUDA_VISIBLE_DEVICES'] = "1"
 sys.path.append("/home/jolivares/Repos/Huehueti/src/Huehueti/")
 from Huehueti import Huehueti
 
-model     = "outliers+extinction"
-case      = "l3_s1100"
-age_range = "50-150Myr"
+model = "extinction"
+mlp   = "l3_s1100"
 
-dir_base       = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/{0}/extinction/".format(age_range)
-file_mlp_phot  = "/home/jolivares/Models/PARSEC/Gaia_EDR3/{0}/MLPs/Phot_{1}/mlp.pkl".format(age_range,case)
-file_mlp_teff  = None #"/home/jolivares/Models/PARSEC/Gaia_EDR3/15-400Myr/MLPs/Teff_l16_s512/mlp.pkl"
+dir_base       = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/50-150Myr/{0}/".format(model)
+file_mlp_phot  = "/home/jolivares/Models/PARSEC/Gaia_EDR3/50-150Myr/MLPs/Phot_{0}/mlp.pkl".format(mlp)
+file_mlp_teff  = None
 
 list_of_ages      = [60] #list(range(60,160,20))
 list_of_distances = [50] #[50,100,200,400]
-list_of_n_stars   = [10] #[10,20]
-list_of_seeds     = [0] #[0,1,2,3,4,5]
+list_of_n_stars   = [20] #[10,20]
+list_of_seeds     = [0,1,2,3,4,5]
 
 dir_inputs  = dir_base + "inputs/"
-dir_outputs = dir_base + "outputs/" #{0}/".format(case)
+dir_outputs = dir_base + "outputs/"
 base_name   = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 
 absolute_photometry = ['Gmag', 'G_BPmag', 'G_RPmag']
@@ -35,11 +34,11 @@ parameters = {"age":None}
 hyperparameters = {"distance":"distance"}
 
 chains ={
-	60:None,
-	80:[0,2,3],
-	100:[1,2],
-	120:[1],
-	140:[1],
+	60:[0,1,2],
+	80:[1,2,3],
+	100:[0,1,2],
+	120:[3],
+	140:[2],
 	# 160:None,180:None,200:None,
 	# 220:None,240:None,260:None,280:None,300:None,3200:None,340:None,360:None,380:None,400:None
 }
@@ -64,14 +63,16 @@ def set_prior(age,distance):
 		"scale" : 5.
 		},
 	"extinction":{
-			"family": "Uniform",
-			"lower":0.0,
-			"upper":5.0,
-			"mu":2.0,
-			"sigma" : 0.1,
-			},
+		"family": "Uniform",
+		"lower":0.0,
+		"upper":5.0,
+		"mu":2.0,
+		"sigma" : 0.1,
+		},
 	"outliers":{
-			"beta": 1/10.
+		"family":"Exponential",
+		"scale":1.0,
+		"beta": 1/10.
 		}
 	}
 	return priors
@@ -118,8 +119,8 @@ for seed in list_of_seeds:
 					target_accept=0.85,
 					init_method="advi",
 					init_iters=int(1e6),
-					nuts_sampler="numpyro",
-					tuning_iters=int(4e3),
+					nuts_sampler="advi",
+					tuning_iters=int(5e5),
 					sample_iters=int(2e3),
 					prior_iters=int(2e3),
 					chains=4
@@ -140,7 +141,7 @@ for seed in list_of_seeds:
 
 				#--------- Save time--------------------
 				data = {
-					"case":case,
+					"mlp":mlp,
 					"age":age,
 					"distance":distance,
 					"n_stars":n_stars,

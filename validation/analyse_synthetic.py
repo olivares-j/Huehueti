@@ -33,25 +33,30 @@ pn.set_option('display.max_rows', None)
 dir_base = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/50-150Myr/"
 dir_fig  = "/home/jolivares/Dropbox/MisArticulos/BayesianAges/Isochrones/Method/Figures/"
 
-cases = ["l3_s1100"] #["l3_s900","l3_s1100","l3_s1300","l3_s1400","l3_s1500","l3_s1700"]
+case = "base"
+cases = [case]
 
 list_of_ages      = list(range(60,160,20))
-list_of_distances = [50,100]
+list_of_distances = [50,100,200,400]
 list_of_n_stars   = [10,20]
-list_of_seeds     = [5]
+list_of_seeds     = [0,1,2,3,4]
 
 do_process = True
 do_plt_grp = True
-do_plt_src = False
+do_plt_src = True
 
 file_data_all = dir_base + "data_cases.h5"
-file_plt_grp  = dir_fig + "Group-level.pdf"
-file_plt_src  = dir_fig + "Source-level.pdf"
+file_plt_grp  = dir_fig + "{0}_group-level.pdf"
+file_plt_src  = dir_fig + "{0}_source-level.pdf"
 
-base_name   = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
-base_obs_grp = "{0}/Global_statistics.csv"
-base_obs_src = "{0}/Sources_statistics.csv"
-base_syn_src = "inputs/{0}.csv"
+
+base_dir_out = "{0}{1}/outputs/"
+base_dir_in  = "{0}{1}/inputs/"
+base_obs_grp = "{0}/{1}/Global_statistics.csv"
+base_obs_src = "{0}/{1}/Sources_statistics.csv"
+base_syn_src = "{0}/{1}.csv"
+base_dat     = "{0}{1}/data.h5"
+base_name    = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 #---------------------------------------------------------------------------
 
 coordinates = ["X","Y","Z","U","V","W"]
@@ -84,8 +89,9 @@ if do_process:
 	dfss_src = []
 	for case in cases:
 		print(40*"+" +" " + case + " " +40*"+")
-		dir_data  = dir_base + case + "/"
-		file_data = dir_data + "data.h5"
+		dir_out   = base_dir_out.format(dir_base,case)
+		dir_in    = base_dir_in.format(dir_base,case)
+		file_data = base_dat.format(dir_base,case)
 		dfs_grp = []
 		dfs_src = []
 		for age in list_of_ages:
@@ -96,9 +102,9 @@ if do_process:
 						print(40*"-" +" " + name + " " +40*"-")
 
 						#------------- Files ---------------------------------
-						file_obs_grp   = dir_data + base_obs_grp.format(name)
-						file_obs_src   = dir_data + base_obs_src.format(name)
-						file_true_src  = dir_base + base_syn_src.format(name)
+						file_obs_grp   = base_obs_grp.format(dir_out,name)
+						file_obs_src   = base_obs_src.format(dir_out,name)
+						file_true_src  = base_syn_src.format(dir_in,name)
 						#-----------------------------------------------------
 
 						#-------------------- Observed values -------------------------------
@@ -221,38 +227,40 @@ if do_process:
 
 #=========================== Plots =======================================
 if do_plt_grp:
-	print("Plotting common group-level parameters")
+	print("Plotting group-level parameters")
 	#------------ Read data --------------------------------
 	df_grp = pn.read_hdf(file_data_all,key="df_grp")
 	#-------------------------------------------------------
 
 	df_grp.reset_index(inplace=True)
 
-	pdf = PdfPages(filename=file_plt_grp)
-	for st in sts_grp:
-		fg = sns.FacetGrid(data=df_grp,
-						col="distance",
-						sharey=True,
-						sharex=True,
-						margin_titles=True,
-						col_wrap=6,
-						hue="n_stars",
-						# hue="n_stars"
-						)
-		fg.map(sns.scatterplot,"age",st["key"])
-		# fg.map(sns.lineplot,"age",st["key"])
-		fg.set_xlabels("Age [Myr]")
-		fg.set_ylabels(st["name"])
-		fg.add_legend()
+	for case in cases:
+		pdf = PdfPages(filename=file_plt_grp.format(case))
+		for st in sts_grp:
+			fg = sns.FacetGrid(data=df_grp,
+							col="distance",
+							# row="n_stars",
+							sharey=True,
+							sharex=True,
+							margin_titles=True,
+							# col_wrap=6,
+							# hue="seed",
+							hue="n_stars"
+							)
+			# fg.map(sns.scatterplot,"age",st["key"])
+			fg.map(sns.lineplot,"age",st["key"])
+			fg.set_xlabels("Age [Myr]")
+			fg.set_ylabels(st["name"])
+			fg.add_legend()
 
-		sns.move_legend(fg,
-				loc="lower center",
-				bbox_to_anchor=(.45, 1),
-				ncol=6)
-		plt.subplots_adjust(wspace=0.1)
-		pdf.savefig(bbox_inches='tight',dpi=300)
-		plt.close()
-	pdf.close()
+			sns.move_legend(fg,
+					loc="lower center",
+					bbox_to_anchor=(.45, 1),
+					ncol=6)
+			plt.subplots_adjust(wspace=0.1)
+			pdf.savefig(bbox_inches='tight',dpi=300)
+			plt.close()
+		pdf.close()
 	#-------------------------------------------------------------------------
 
 if do_plt_src:
@@ -263,27 +271,27 @@ if do_plt_src:
 
 	df_src.reset_index(inplace=True)
 
-	#-------------- Source level----------------------------------------------
-	pdf = PdfPages(filename=file_plt_src)
-	for st in sts_src:
-		fg = sns.FacetGrid(data=df_src,
-						col="Case",
-						sharey=True,
-						sharex=True,
-						margin_titles=True,
-						col_wrap=6,
-						hue="n_stars")
-		fg.map(sns.lineplot,"age",st["key"])
-		fg.set_xlabels("Age [Myr]")
-		fg.set_ylabels(st["name"])
-		fg.add_legend()
+	for case in cases:
+		pdf = PdfPages(filename=file_plt_src.format(case))
+		for st in sts_src:
+			fg = sns.FacetGrid(data=df_src,
+							col="distance",
+							sharey=True,
+							sharex=True,
+							margin_titles=True,
+							col_wrap=6,
+							hue="n_stars")
+			fg.map(sns.lineplot,"age",st["key"])
+			fg.set_xlabels("Age [Myr]")
+			fg.set_ylabels(st["name"])
+			fg.add_legend()
 
-		sns.move_legend(fg,
-				loc="lower center",
-				bbox_to_anchor=(.45, 1),
-				ncol=5)
-		plt.subplots_adjust(wspace=0.1)
-		pdf.savefig(bbox_inches='tight')
-		plt.close()
-	pdf.close()
+			sns.move_legend(fg,
+					loc="lower center",
+					bbox_to_anchor=(.45, 1),
+					ncol=5)
+			plt.subplots_adjust(wspace=0.1)
+			pdf.savefig(bbox_inches='tight')
+			plt.close()
+		pdf.close()
 	#-------------------------------------------------------------------------

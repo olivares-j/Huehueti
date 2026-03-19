@@ -66,7 +66,6 @@ class Model_v0(Model):
 	
 	def __init__(self,
 		mlp_phot,
-		mlp_teff,
 		parameters : dict,
 		prior : dict,
 		identifiers : np.ndarray,
@@ -111,18 +110,18 @@ class Model_v0(Model):
 		if parameters["age"] is None:
 			# Age prior can be either TruncatedNormal or Uniform as provided by caller.
 			if prior["age"]["family"] == 'TruncatedNormal':
-				age = pm.TruncatedNormal('age',
-						mu = prior['age']['mu'],
-						sigma = prior['age']['sigma'],
-						lower = prior['age']['lower'],
-						upper = prior['age']['upper'],
+				age = pm.TruncatedNormal("age",
+						mu = prior["age"]['mu'],
+						sigma = prior["age"]['sigma'],
+						lower=np.pow(10,mlp_phot.domain["logAge"][0])/np.pow(10,6),
+						upper=np.pow(10,mlp_phot.domain["logAge"][1])/np.pow(10,6),
 						)
 			elif prior["age"]["family"] == 'Uniform':
-				age = pm.Uniform('age', 
-						lower = prior['age']['lower'],
-						upper = prior['age']['upper'],)
+				age = pm.Uniform("age", 
+						lower=np.pow(10,mlp_phot.domain["logAge"][0])/np.pow(10,6),
+						upper=np.pow(10,mlp_phot.domain["logAge"][1])/np.pow(10,6),)
 			else: 
-				raise KeyError('Unknown age prior distribution')
+				raise KeyError('Unknown logAge prior distribution')
 		else:
 			age = pm.Deterministic("age",pytensor.shared(parameters["age"]))
 		#===============================================================================
@@ -168,13 +167,21 @@ class Model_v0(Model):
 								dims="source_id")
 		#=====================================================================================
 
-		#====================== Mass ============================================================
-		mass = pm.Uniform('mass',dims="source_id",
-							lower=mlp_phot.mass_domain[0],
-							upper=mlp_phot.mass_domain[1],
-							initval=np.full(shape=n_stars,fill_value=mlp_phot.mass_domain[0]+1e-3)
+		#====================== logL and logTe =============================
+		log_lum = pm.Uniform('log_lum',dims="source_id",
+							lower=mlp_phot.domain["logL"][0],
+							upper=mlp_phot.domain["logL"][1],
+							initval=np.full(shape=n_stars,
+								fill_value=mlp_phot.domain["logL"][0]+1e-3)
 							)
-		#======================================================================================
+		log_tef = pm.Uniform('log_tef',dims="source_id",
+							lower=mlp_phot.domain["logTe"][0],
+							upper=mlp_phot.domain["logTe"][1],
+							initval=np.full(shape=n_stars,
+								fill_value=mlp_phot.domain["logTe"][0]+1e-3)
+							)
+		tef = pm.Deterministic("tef",pt.pow(10,log_tef))
+		#===================================================================
 
 		#===================== Photometry =================================================
 		# # Photometric dispersion is a per-band parameter (dims="photometric_names")
@@ -200,8 +207,9 @@ class Model_v0(Model):
 		
 		#--------------------- True value ---------------------------------------------------
 		# Convert absolute photometry to apparent magnitudes using per-source distance
+		log_age = pt.log10(age*1.e6)
 		photometry = pm.Deterministic('photometry',
-							var=absolute_to_apparent(mlp_phot(age, mass, n_stars),distance),
+							var=absolute_to_apparent(mlp_phot(log_age,log_lum,log_tef, n_stars),distance),
 							dims=("source_id","photometry_names"))
 		#------------------------------------------------------------------------------------
 
@@ -233,7 +241,7 @@ class Model_v0(Model):
 		if spectroscopy_mu is not None:
 			#---------------- True values -----------------------------------
 			spectroscopy = pm.Deterministic('spectroscopy',
-								var=mlp_teff(age, mass, n_stars),
+								var=pytensor.tensor.reshape(tef,(n_stars,1)),
 								dims=("source_id","spectroscopy_names"))
 			#----------------------------------------------------------------
 
@@ -377,19 +385,33 @@ class Model_v1(Model):
 							dims=("source_id","photometry_names"))
 		#------------------------------------------------------------------------------------
 
-		# Weakly informative prior for Nu (degrees of freedom)
-		nu = pm.Gamma("nu",
-					alpha=2.0,
-					beta=prior["outliers"]["beta"],
-					dims="photometry_names")
+		if prior["outliers"]["family"] == "StudentT":
+			nu = pm.Gamma("nu",
+						alpha=2.0,
+						beta=prior["outliers"]["beta"],
+						dims="photometry_names")
 
-		#-------------- Likelihood --------------------
-		obs_photometry = pm.StudentT('obs_photometry',
-			nu=pt.tile(nu,n_stars),
-			mu=photometry[photometry_ix], 
-			sigma=photometry_sd[photometry_ix],
-			observed=photometry_mu[photometry_ix])
-		#-----------------------------------------------------
+			#-------------- Likelihood --------------------
+			obs_photometry = pm.StudentT('obs_photometry',
+				nu=pt.tile(nu,n_stars),
+				mu=photometry[photometry_ix], 
+				sigma=photometry_sd[photometry_ix],
+				observed=photometry_mu[photometry_ix])
+			#-----------------------------------------------------
+		elif prior["outliers"]["family"] == "SkewNormal":
+			alpha = pm.Exponential("alpha",
+						scale=prior["outliers"]["scale"],
+						dims="photometry_names")
+
+			#-------------- Likelihood --------------------
+			obs_photometry = pm.SkewNormal('obs_photometry',
+				alpha=pt.tile(alpha,n_stars),
+				mu=photometry[photometry_ix], 
+				sigma=photometry_sd[photometry_ix],
+				observed=photometry_mu[photometry_ix])
+			#-----------------------------------------------------
+		else:
+			sys.exit("Unrecognized outliers family")
 		#======================================================================================
 
 		#===================== Astrometry ===============================================
@@ -400,15 +422,8 @@ class Model_v1(Model):
 								dims=("source_id","astrometry_names"))
 			#---------------------------------------------------------------------------
 
-			# Weakly informative prior for Nu (degrees of freedom)
-			nu_as = pm.Gamma("nu_as",
-					alpha=2.0,
-					beta=prior["outliers"]["beta"],
-					dims="astrometry_names")
-
 			#----------- Likelihood --------------------------
-			obs_astrometry = pm.StudentT('obs_astrometry',
-				nu=pt.tile(nu_as,n_stars),
+			obs_astrometry = pm.Normal('obs_astrometry',
 				mu=astrometry[astrometry_ix], 
 				sigma=astrometry_sd[astrometry_ix], 
 				observed=astrometry_mu[astrometry_ix])
@@ -423,15 +438,8 @@ class Model_v1(Model):
 								dims=("source_id","spectroscopy_names"))
 			#----------------------------------------------------------------
 
-			# Weakly informative prior for Nu (degrees of freedom)
-			nu_sp = pm.Gamma("nu_sp",
-					alpha=2.0,
-					beta=prior["outliers"]["beta"],
-					dims="spectroscopy_names")
-
 			#-------------- Likelihood ---------------------
-			obs_spectroscopy = pm.StudentT('obs_spectroscopy',
-				nu=pt.tile(nu_sp,n_stars),
+			obs_spectroscopy = pm.Normal('obs_spectroscopy',
 				mu=spectroscopy[spectroscopy_ix], 
 				sigma=spectroscopy_sd[spectroscopy_ix],
 				observed=spectroscopy_mu[spectroscopy_ix])
@@ -785,19 +793,33 @@ class Model_v3(Model):
 							dims=("source_id","photometry_names"))
 		#------------------------------------------------------------------------------------
 
-		# Weakly informative prior for Nu (degrees of freedom)
-		nu = pm.Gamma("nu",
-					alpha=2.0,
-					beta=prior["outliers"]["beta"],
-					dims="photometry_names")
+		if prior["outliers"]["family"] == "StudentT":
+			nu = pm.Gamma("nu",
+						alpha=2.0,
+						beta=prior["outliers"]["beta"],
+						dims="photometry_names")
 
-		#-------------- Likelihood --------------------
-		obs_photometry = pm.StudentT('obs_photometry',
-			nu=pt.tile(nu,n_stars),
-			mu=photometry[photometry_ix], 
-			sigma=photometry_sd[photometry_ix],
-			observed=photometry_mu[photometry_ix])
-		#-----------------------------------------------------
+			#-------------- Likelihood --------------------
+			obs_photometry = pm.StudentT('obs_photometry',
+				nu=pt.tile(nu,n_stars),
+				mu=photometry[photometry_ix], 
+				sigma=photometry_sd[photometry_ix],
+				observed=photometry_mu[photometry_ix])
+			#-----------------------------------------------------
+		elif prior["outliers"]["family"] == "SkewNormal":
+			alpha = pm.Exponential("alpha",
+						scale=prior["outliers"]["scale"],
+						dims="photometry_names")
+
+			#-------------- Likelihood --------------------
+			obs_photometry = pm.SkewNormal('obs_photometry',
+				alpha=pt.tile(alpha,n_stars),
+				mu=photometry[photometry_ix], 
+				sigma=photometry_sd[photometry_ix],
+				observed=photometry_mu[photometry_ix])
+			#-----------------------------------------------------
+		else:
+			sys.exit("Unrecognized outliers family")
 		#======================================================================================
 
 		#===================== Astrometry ===============================================
@@ -808,15 +830,8 @@ class Model_v3(Model):
 								dims=("source_id","astrometry_names"))
 			#---------------------------------------------------------------------------
 
-			# Weakly informative prior for Nu (degrees of freedom)
-			nu_as = pm.Gamma("nu_as",
-					alpha=2.0,
-					beta=prior["outliers"]["beta"],
-					dims="astrometry_names")
-
 			#----------- Likelihood --------------------------
-			obs_astrometry = pm.StudentT('obs_astrometry',
-				nu=pt.tile(nu_as,n_stars),
+			obs_astrometry = pm.Normal('obs_astrometry',
 				mu=astrometry[astrometry_ix], 
 				sigma=astrometry_sd[astrometry_ix], 
 				observed=astrometry_mu[astrometry_ix])
@@ -831,15 +846,8 @@ class Model_v3(Model):
 								dims=("source_id","spectroscopy_names"))
 			#----------------------------------------------------------------
 
-			# Weakly informative prior for Nu (degrees of freedom)
-			nu_sp = pm.Gamma("nu_sp",
-					alpha=2.0,
-					beta=prior["outliers"]["beta"],
-					dims="spectroscopy_names")
-
 			#-------------- Likelihood ---------------------
-			obs_spectroscopy = pm.StudentT('obs_spectroscopy',
-				nu=pt.tile(nu_sp,n_stars),
+			obs_spectroscopy = pm.Normal('obs_spectroscopy',
 				mu=spectroscopy[spectroscopy_ix], 
 				sigma=spectroscopy_sd[spectroscopy_ix],
 				observed=spectroscopy_mu[spectroscopy_ix])

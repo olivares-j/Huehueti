@@ -16,318 +16,115 @@ import pandas as pn
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# def relu(x, alpha=0):
-#     """
-#     Compute the element-wise rectified linear activation function.
-
-#     Parameters
-#     ----------
-#     x : symbolic tensor
-#         Tensor to compute the activation function for.
-#     alpha : `scalar or tensor, optional`
-#         Slope for negative input, usually between 0 and 1. The default value
-#         of 0 will lead to the standard rectifier, 1 will lead to
-#         a linear activation function, and any value in between will give a
-#         leaky rectifier. A shared variable (broadcastable against `x`) will
-#         result in a parameterized rectifier with learnable slope(s).
-
-#     Returns
-#     -------
-#     symbolic tensor
-#         Element-wise rectifier applied to `x`.
-
-#     Notes
-#     -----
-#     This is numerically equivalent to ``pt.switch(x > 0, x, alpha * x)``
-#     (or ``pt.maximum(x, alpha * x)`` for ``alpha < 1``), but uses a faster
-#     formulation or an optimized Op, so we encourage to use this function.
-
-#     """
-#     if alpha == 0:
-#         return 0.5 * (x + abs(x))
-#     else:
-#         # We can't use 0.5 and 1 for one and half.  as if alpha is a
-#         # numpy dtype, they will be considered as float64, so would
-#         # cause upcast to float64.
-#         alpha = pt.as_tensor_variable(alpha)
-#         f1 = 0.5 * (1 + alpha)
-#         f2 = 0.5 * (1 - alpha)
-#         return f1 * x + f2 * abs(x)
-
 def relu(x): #With alpha set to zero to improve speed
-    """
-    Compute the element-wise rectified linear activation function.
-
-    Parameters
-    ----------
-    x : symbolic tensor
-        Tensor to compute the activation function for.
-    alpha : `scalar or tensor, optional`
-        Slope for negative input, usually between 0 and 1. The default value
-        of 0 will lead to the standard rectifier, 1 will lead to
-        a linear activation function, and any value in between will give a
-        leaky rectifier. A shared variable (broadcastable against `x`) will
-        result in a parameterized rectifier with learnable slope(s).
-
-    Returns
-    -------
-    symbolic tensor
-        Element-wise rectifier applied to `x`.
-
-    Notes
-    -----
-    This is numerically equivalent to ``pt.switch(x > 0, x, alpha * x)``
-    (or ``pt.maximum(x, alpha * x)`` for ``alpha < 1``), but uses a faster
-    formulation or an optimized Op, so we encourage to use this function.
-
-    """
-    # if alpha == 0:
     return 0.5 * (x + abs(x))
-    # else:
-	    # We can't use 0.5 and 1 for one and half.  as if alpha is a
-	    # numpy dtype, they will be considered as float64, so would
-	    # cause upcast to float64.
-	    # alpha = pt.as_tensor_variable(alpha)
-	    # f1 = 0.5 * (1 + alpha)
-	    # f2 = 0.5 * (1 - alpha)
-	    # return f1 * x + f2 * abs(x)
+
+def sigmoid(x):
+	return 1./(1.+ pt.exp(-x))
+
+def Phot_band(X,W,b,mu,sd):
+	A1  = sigmoid(pt.dot(X,  W[0]) + b[0])
+	A2  = sigmoid(pt.dot(A1, W[1]) + b[1])
+	A3  = sigmoid(pt.dot(A2, W[2]) + b[2])
+	A4  = sigmoid(pt.dot(A3, W[3]) + b[3])
+	A5  = sigmoid(pt.dot(A4, W[4]) + b[4])
+	A6  = sigmoid(pt.dot(A5, W[5]) + b[5])
+	# A7  = sigmoid(pt.dot(A6, W[6]) + b[6])
+	# Final linear output (no activation)
+	out = pt.dot(A6,W[6]) + b[6]
+
+	return (out.flatten()*sd) + mu
 
 class MLP_phot:
 	"""Wrapper around a pretrained multilayer perceptron.
-
-	Responsibilities:
-	- load NN weights and preprocessing scalers from disk
-	- expose a callable that accepts (age, theta, n_stars) and returns
-	  PyTensor expressions for mass and photometry suitable for inclusion
-	  inside probabilistic models.
-
-	Notes on shapes and conventions used in this code:
-	- age: scalar (float) or PyTensor scalar
-	- theta: 1-D array-like of length n_stars (PyTensor or numpy)
-	- n_stars: integer number of samples in theta
-	- The implementation stacks age and theta into a 2xN array and applies
-	  the same preprocessing (BoxCox + MinMax) used at training time.
-	- The network returns an array "targets" where the first output column
-	  corresponds to stellar mass and the remaining columns correspond to
-	  absolute magnitudes (photometry) in the trained band order.
 	"""
 
-	def __init__(self, 
-		file_mlp : str = 'mlp_iso_BT-Settl.pkl'
+	def __init__(self,
+		files_mlps: dict,
+		features = ["logAge","logL","logTe"],
+		targets = ["G_BPmag","Gmag","G_RPmag"],
 		):
-		"""Load optimal weights and scalers from trained MLP.
-
-		The serialized file is expected to contain a dict-like object with keys:
-		  - "weights": list/array of weight and bias matrices in the expected order
-		  - "scalers": list of sklearn-like scalers [BoxCox, MinMax]
-		  - "phot_min": per-band lower limit used elsewhere for filtering
-		  - "age_domain": (min_age, max_age)
-		  - "par_domain" (theta domain)
+		"""Load the mlps for each photometric band
 		"""
 		# Load weights and scalers from provided file path
-		try:
-			with open(file_mlp, 'rb') as file:
-				mlp = load(file)
-				weights = mlp["weights"]
-				scalers = mlp["scalers"]
-				num_layers = mlp["num_layers"]
-				self.targets = mlp["targets"]
-				self.phot_min = mlp["phot_min"]
-				self.age_domain  = mlp["age_domain"]
-				self.mass_domain = mlp["mass_domain"]
-
-			assert num_layers == 3, "Error: mismatch in number of layers!"
-
-		except FileNotFoundError as error:
-			# Provide a clear error for the user if file missing
-			raise FileNotFoundError("The file containing optimal weights and scalers cannot be found. Please, provide a valid path") from error
-		else:
-			# Unpack weights/biases according to the trained network layout.
-			# The code expects exactly this many items and ordering.
-			self.W = weights[::2]
-			self.b = weights[1::2]
-
-			# Scalers used for preprocessing the inputs
-			self.BoxCox = scalers[0]
-			self.MinMax = scalers[1]
-
-			# Box-Cox lambdas are stored per input dimension and reshaped to column vectors.
-			self.lamb = np.array(self.BoxCox.lambdas_).reshape(-1, 1)
+		assert list(files_mlps.keys()) == targets,"Error in keys! Must be equal to targets!"
+		self.features = features
+		self.targets = targets
+		self.bands = {}
+		domains = []
+		mus_features = []
+		sds_features = []
+		for name,file_mlp in files_mlps.items():
+			print("Reading band: {0}".format(name))
+			assert os.path.exists(file_mlp),"The file containing optimal weights and scalers cannot be found. Please, provide a valid path"
+			band = {}
 			
-			# MinMax scaling metadata (data_min_, data_max_) used to scale inputs.
-			self.min_val = self.MinMax.data_min_.reshape(-1, 1)
-			self.max_val = self.MinMax.data_max_.reshape(-1, 1)
-			self.dff_val = self.max_val - self.min_val
 
-		# Print a small summary for user awareness when instantiating the MLP.
-		print("Age domain:  [{0:2.1f},{1:2.1f}]".format(*self.age_domain))
-		print("Mass domain: [{0:2.2f},{1:2.3f}]".format(*self.mass_domain))
-
-	def __call__(self, age, mass, n_stars):
-		"""Compute NN predictions for given age and theta grid.
-
-		Returns:
-		  - mass: PyTensor vector of length n_stars
-		  - photometry: PyTensor matrix shape (n_stars, n_bands)
-
-		Detailed steps:
-		1. Stack age and theta into a 2xN tensor so each column corresponds to one star.
-	 2. Apply Box-Cox transform (or log for lambda==0) elementwise.
-	 3. Apply MinMax scaling using stored min/max values.
-	 4. Run forward pass through 10 hidden layers using relu activations.
-	 5. Final linear mapping produces targets: [mass, phot_band_1, phot_band_2, ...].
-		"""
-		# Stack age and tiled age with theta to form input columns:
-		# amt has shape (2, n_stars) using pytensor operations.
-		amt = pt.stack([pt.tile(age, n_stars), mass])
-
-		# Apply Box-Cox transform: (x^lambda - 1)/lambda, and log if lambda==0.
-		# The comparison and switch is done elementwise using pytensor operations.
-		x = pt.switch(pt.neq(self.lamb, 0), (amt ** self.lamb - 1) / self.lamb, pt.log(amt))
-
-		# Normalize using MinMax stored values and transpose to shape (n_stars, n_features)
-		# so that a forward pass with weight matrices (features x hidden) works naturally.
-		A0 = ((x - self.min_val) / self.dff_val).T
-
-		# Forward pass through the network: linear -> relu -> linear -> relu -> ...
-		# Each Z* is the pre-activation and A* the post-activation (relu).
-		A1  = relu(pt.dot(A0, self.W[0])  + self.b[0])
-		A2  = relu(pt.dot(A1, self.W[1])  + self.b[1])
-		A3  = relu(pt.dot(A2, self.W[2])  + self.b[2])
-		# A4  = relu(pt.dot(A3, self.W[3])  + self.b[3])
-		# A5  = relu(pt.dot(A4, self.W[4])  + self.b[4])
-		# A6  = relu(pt.dot(A5, self.W[5])  + self.b[5])
-		# A7  = relu(pt.dot(A6, self.W[6])  + self.b[6])
-		# A8  = relu(pt.dot(A7, self.W[7])  + self.b[7])
-		# A9  = relu(pt.dot(A8, self.W[8])  + self.b[8])
-		# A10 = relu(pt.dot(A9, self.W[9])  + self.b[9])
-		# A11 = relu(pt.dot(A10, self.W[10])  + self.b[10])
-		# A12 = relu(pt.dot(A11, self.W[11])  + self.b[11])
-		# A13 = relu(pt.dot(A12, self.W[12])  + self.b[12])
-		# Final linear output (no activation)
-		targets = pt.dot(A3, self.W[3]) + self.b[3]
-
-		return targets
-
-class MLP_teff:
-	"""Wrapper around a pretrained multilayer perceptron.
-
-	Responsibilities:
-	- load NN weights and preprocessing scalers from disk
-	- expose a callable that accepts (age, theta, n_stars) and returns
-	  PyTensor expressions for mass and photometry suitable for inclusion
-	  inside probabilistic models.
-
-	Notes on shapes and conventions used in this code:
-	- age: scalar (float) or PyTensor scalar
-	- theta: 1-D array-like of length n_stars (PyTensor or numpy)
-	- n_stars: integer number of samples in theta
-	- The implementation stacks age and theta into a 2xN array and applies
-	  the same preprocessing (BoxCox + MinMax) used at training time.
-	- The network returns an array "targets" where the first output column
-	  corresponds to stellar mass and the remaining columns correspond to
-	  absolute magnitudes (photometry) in the trained band order.
-	"""
-
-	def __init__(self, 
-		file_mlp : str = 'mlp_iso_BT-Settl.pkl'
-		):
-		"""Load optimal weights and scalers from trained MLP.
-
-		The serialized file is expected to contain a dict-like object with keys:
-		  - "weights": list/array of weight and bias matrices in the expected order
-		  - "scalers": list of sklearn-like scalers [BoxCox, MinMax]
-		  - "phot_min": per-band lower limit used elsewhere for filtering
-		  - "age_domain": (min_age, max_age)
-		  - "par_domain" (theta domain)
-		"""
-		# Load weights and scalers from provided file path
-		try:
 			with open(file_mlp, 'rb') as file:
-				mlp = load(file)
-				weights = mlp["weights"]
-				scalers = mlp["scalers"]
-				num_layers = mlp["num_layers"]
-				self.targets = mlp["targets"]
-				self.age_domain  = mlp["age_domain"]
-				self.mass_domain = mlp["mass_domain"]
+				tmp = load(file)
+				tmp_weights   = tmp["weights"]
+				tmp_num_lyrs  = tmp["num_layers"]
+				tmp_sze_lyrs  = tmp["size_layers"]
+				tmp_targets   = tmp["targets"]
+				tmp_features  = tmp["features"]
+				tmp_phot_min  = tmp["phot_min"]
+				tmp_domain    = tmp["domain"]
+				tmp_mu        = tmp["mu_transform"]
+				tmp_sd        = tmp["sd_transform"]
 
-			assert num_layers == 16, "Error: mismatch in number of layers!"
+			assert tmp_features == features, "Features mismatch! Expected: {0}".format(features)
+			assert tmp_targets[0] in targets, "Target mismatch! Expected on of {0}".format(targets)
+			assert tmp_num_lyrs == 6, "Error: mismatch in number of layers! Expected 4"
 
-		except FileNotFoundError as error:
-			# Provide a clear error for the user if file missing
-			raise FileNotFoundError("The file containing optimal weights and scalers cannot be found. Please, provide a valid path") from error
-		else:
-			# Unpack weights/biases according to the trained network layout.
-			# The code expects exactly this many items and ordering.
-			self.W = weights[::2]
-			self.b = weights[1::2]
+			band["W"] = tmp_weights[::2]
+			band["b"] = tmp_weights[1::2]
+			band["mu"] = tmp_mu.loc[tmp_targets].to_numpy()
+			band["sd"] = tmp_sd.loc[tmp_targets].to_numpy()
+			band["min"] = tmp_phot_min
 
-			# Scalers used for preprocessing the inputs
-			self.BoxCox = scalers[0]
-			self.MinMax = scalers[1]
+			domains.append(tmp_domain)
+			mus_features.append(tmp_mu.loc[features].to_numpy())
+			sds_features.append(tmp_sd.loc[features].to_numpy())
 
-			# Box-Cox lambdas are stored per input dimension and reshaped to column vectors.
-			self.lamb = np.array(self.BoxCox.lambdas_).reshape(-1, 1)
-			
-			# MinMax scaling metadata (data_min_, data_max_) used to scale inputs.
-			self.min_val = self.MinMax.data_min_.reshape(-1, 1)
-			self.max_val = self.MinMax.data_max_.reshape(-1, 1)
-			self.dff_val = self.max_val - self.min_val
+			self.bands[name] = band
 
-		# Print a small summary for user awareness when instantiating the MLP.
-		print("Age domain: [{0:2.1f},{1:2.1f}]".format(*self.age_domain))
-		print("Mass domain: [{0:2.2f},{1:2.3f}]".format(*self.mass_domain))
+		domain = domains[0]
+		for tmp_domain in domains[1:]:
+			assert tmp_domain == domain,"Domain mismatch!"
 
-	def __call__(self, age, mass, n_stars):
+		mu_features = mus_features[0]
+		for tmp_mu_features in mus_features[1:]:
+			np.testing.assert_equal(tmp_mu_features,mu_features,
+				err_msg="mu_features mismatch!")
+
+		sd_features = sds_features[0]
+		for tmp_sd_features in sds_features[1:]:
+			np.testing.assert_equal(tmp_sd_features,sd_features,
+				err_msg="sd_features mismatch!")
+
+		self.domain = domain
+		self.mu_features = mu_features
+		self.sd_features = sd_features
+
+	def __call__(self, logAge, logL, logTe, n_stars):
 		"""Compute NN predictions for given age and theta grid.
-
-		Returns:
-		  - mass: PyTensor vector of length n_stars
-		  - photometry: PyTensor matrix shape (n_stars, n_bands)
-
-		Detailed steps:
-		1. Stack age and theta into a 2xN tensor so each column corresponds to one star.
-	 2. Apply Box-Cox transform (or log for lambda==0) elementwise.
-	 3. Apply MinMax scaling using stored min/max values.
-	 4. Run forward pass through 10 hidden layers using relu activations.
-	 5. Final linear mapping produces targets: [mass, phot_band_1, phot_band_2, ...].
 		"""
-		# Stack age and tiled age with theta to form input columns:
-		# amt has shape (2, n_stars) using pytensor operations.
-		amt = pt.stack([pt.tile(age, n_stars),mass])
 
-		# Apply Box-Cox transform: (x^lambda - 1)/lambda, and log if lambda==0.
-		# The comparison and switch is done elementwise using pytensor operations.
-		x = pt.switch(pt.neq(self.lamb, 0), (amt ** self.lamb - 1) / self.lamb, pt.log(amt))
+		x = pt.stack([pt.tile(logAge, (n_stars,)), logL, logTe],axis=1)
 
-		# Normalize using MinMax stored values and transpose to shape (n_stars, n_features)
-		# so that a forward pass with weight matrices (features x hidden) works naturally.
-		A0 = ((x - self.min_val) / self.dff_val).T
+		A0 = (x - self.mu_features)/self.sd_features
 
-		# Forward pass through the network: linear -> relu -> linear -> relu -> ...
 
-		A1  = relu(pt.dot(A0, self.W[0])  + self.b[0])
-		A2  = relu(pt.dot(A1, self.W[1])  + self.b[1])
-		A3  = relu(pt.dot(A2, self.W[2])  + self.b[2])
-		A4  = relu(pt.dot(A3, self.W[3])  + self.b[3])
-		A5  = relu(pt.dot(A4, self.W[4])  + self.b[4])
-		A6  = relu(pt.dot(A5, self.W[5])  + self.b[5])
-		A7  = relu(pt.dot(A6, self.W[6])  + self.b[6])
-		A8  = relu(pt.dot(A7, self.W[7])  + self.b[7])
-		A9  = relu(pt.dot(A8, self.W[8])  + self.b[8])
-		A10 = relu(pt.dot(A9, self.W[9])  + self.b[9])
-		A11 = relu(pt.dot(A10,self.W[10]) + self.b[10])
-		A12 = relu(pt.dot(A11,self.W[11]) + self.b[11])
-		A13 = relu(pt.dot(A12,self.W[12]) + self.b[12])
-		A14 = relu(pt.dot(A13,self.W[13]) + self.b[13])
-		A15 = relu(pt.dot(A14,self.W[14]) + self.b[14])
-		A16 = relu(pt.dot(A15,self.W[15]) + self.b[15])
-		# Final linear output (no activation) gives targets for mass + photometry bands
-		targets = pt.dot(A16, self.W[16]) + self.b[16]
+		G_BPmag = Phot_band(X=A0,W=self.bands["G_BPmag"]["W"],b=self.bands["G_BPmag"]["b"],
+						mu=self.bands["G_BPmag"]["mu"],sd=self.bands["G_BPmag"]["sd"])
 
-		return targets
+		Gmag = Phot_band(X=A0,W=self.bands["Gmag"]["W"],b=self.bands["Gmag"]["b"],
+						mu=self.bands["Gmag"]["mu"],sd=self.bands["Gmag"]["sd"])
 
+		G_RPmag = Phot_band(X=A0,W=self.bands["G_RPmag"]["W"],b=self.bands["G_RPmag"]["b"],
+						mu=self.bands["G_RPmag"]["mu"],sd=self.bands["G_RPmag"]["sd"])
+
+		return pt.stack([G_BPmag,Gmag,G_RPmag],axis=1)
 
 # The block below is an example usage / quick visual test when running the file
 # directly. It is not required for the library functionality and will only run
@@ -335,17 +132,34 @@ class MLP_teff:
 if __name__ == "__main__":
 	import bisect
 
-	dir_base = "/home/jolivares/Models/PARSEC/Gaia_EDR3/100-500Myr/"
+	dir_mlps = "/home/jolivares/Models/PARSEC/Gaia_EDR3/50-150Myr/Kroupa/"
 
-	file_iso      = dir_base + "output.dat"
-	file_mlp_phot = dir_base + "MLPs/Phot_l4_s1024/mlp.pkl"
-	file_mlp_teff = dir_base + "MLPs/Teff_l16_s512/mlp.pkl"
+	file_iso      = dir_mlps + "output_0.1myr.dat"
+	files_mlps = {
+	"G_BPmag":dir_mlps + "MLPs_G_BPmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l7_s15_1/mlp.pkl",
+	"Gmag":   dir_mlps +    "MLPs_Gmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l7_s15_1/mlp.pkl",
+	"G_RPmag":dir_mlps + "MLPs_G_RPmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l7_s15_1/mlp.pkl"
+	}
+	files_mlps = {
+	"G_BPmag":dir_mlps + "MLPs_G_BPmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l6_s20_0/mlp.pkl",
+	"Gmag":   dir_mlps +    "MLPs_Gmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l6_s20_0/mlp.pkl",
+	"G_RPmag":dir_mlps + "MLPs_G_RPmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l6_s20_0/mlp.pkl"
+	}
+	files_mlps = {
+	"G_BPmag":dir_mlps + "MLPs_G_BPmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l6_s15_4/mlp.pkl",
+	"Gmag":   dir_mlps +    "MLPs_Gmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l6_s15_4/mlp.pkl",
+	"G_RPmag":dir_mlps + "MLPs_G_RPmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l6_s15_1/mlp.pkl"
+	}
+	targets = ["G_BPmag","Gmag","G_RPmag"]
+	features = ["logAge","logL","logTe"]
 
-	mlp_phot = MLP_phot(file_mlp=file_mlp_phot)
-	# mlp_teff = MLP_teff(file_mlp=file_mlp_teff)
+	mlp_phot = MLP_phot(
+		features=features,
+		targets=targets,
+		files_mlps=files_mlps)
 
 	# Example: load an isochrone from a parametrized CSV and overlay predicted photometry
-	age = 120.
+	logAge = 8.14613
 	max_label = 1
 
 	df_iso = pn.read_csv(file_iso,
@@ -354,63 +168,79 @@ if __name__ == "__main__":
 					header="infer",
 					comment="#")
 	df_iso = df_iso.loc[df_iso["label"]<= max_label]
-	df_iso["age"] = np.pow(10.,df_iso["logAge"])/1.0e6
-	df_iso["Teff"] = np.pow(10.,df_iso["logTe"])
-	dfg_iso = df_iso.groupby("age")
-	ages = sorted(list(dfg_iso.groups.keys()))
-	index = bisect.bisect(ages, age)
-	age = ages[index]
-	df_iso = dfg_iso.get_group(age)
+	df_iso = df_iso.loc[:,sum([features,targets],[])]
+	df_iso = df_iso.groupby("logAge").get_group(logAge)
+	n_stars = df_iso.shape[0]
 
-	mass  = df_iso["Mini"].to_numpy()
-	n_stars = len(mass)
+	#------------ logL and logTe ------------------------------
+	logL = df_iso["logL"].to_numpy()
+	logTe = df_iso["logTe"].to_numpy()
+	# logL = np.linspace(
+	# 	start=mlp_phot.domain["logL"][0],
+	# 	stop=mlp_phot.domain["logL"][1],
+	# 	num=n_stars)
+	# logTe = np.linspace(
+	# 	start=mlp_phot.domain["logTe"][0],
+	# 	stop=mlp_phot.domain["logTe"][1],
+	# 	num=n_stars)
+	#------------------------------------------------
 
-	#------------ Mass ------------------------------
-	mass = np.linspace(
-		start=mlp_phot.mass_domain[0],
-		stop=mlp_phot.mass_domain[1],
-		num=n_stars)
-	#--------------------------------------------------
+	phot = mlp_phot(logAge,logL,logTe,n_stars).eval()
 
-	# teff = mlp_teff(age,mass,n_stars)
-	phot = mlp_phot(age,mass,n_stars)
+	df_prd = pn.DataFrame(data=phot,columns=mlp_phot.targets)
+	df_prd["logAge"] = logAge
+	df_prd["logL"]   = logL
+	df_prd["logTe"]  = logTe
 
-	df_prd = pn.DataFrame(data=phot.eval(),columns=mlp_phot.targets)
-	df_prd["Mini"] = mass
-	# df_prd["Teff"] = teff.eval().flatten()
+	df_prd.set_index(features,inplace=True)
+	df_iso.set_index(features,inplace=True)
+
+	df = pn.merge(left=df_iso,right=df_prd,
+						left_index=True,
+						right_index=True,
+						suffixes=["_tst","_prd"])
+
+	for trgt in targets:
+		df[trgt] = df.apply(lambda x: (x[trgt+"_prd"]-x[trgt+"_tst"]),axis=1)
+
+	print(np.sqrt(np.square(df.loc[:,targets]).mean(axis=0)))
+
+	df = df.loc[:,targets].stack().reset_index()
+	df.columns = sum([features,["target","value"]],[])
+	print(df.describe())
+
+	#-------------- Error --------------------------
+	fig, ax = plt.subplots(1, 1, figsize=(16, 8))
+	ax = sns.scatterplot(data=df,
+						x=features[1],
+						y="value",
+						hue="target",
+						zorder=0)
+	ax.set_xlabel(features[1])
+	ax.set_ylabel("Diff [mag]")
+	plt.legend(bbox_to_anchor=(1.01, 0.5),
+						loc="center left")
+	plt.show()
+	plt.close()
+	sys.exit()
+	#------------------------------------------------
+
+
 
 	# Simple diagnostic plot to visually compare trained MLP predictions with input isochrone
 	for target in mlp_phot.targets:
 		plt.figure(0)
 		ax = sns.scatterplot(data=df_iso,
-							x="Mini",y=target,
+							x="logL",y=target,
 							legend=True,
 							zorder=0)
 		ax = sns.lineplot(data=df_prd,
-							x="Mini",y=target,
+							x="logL",y=target,
 							legend=True,
 							sort=False,
 							zorder=1,
 							ax=ax)
 
-		ax.set_xlabel("Mini")
+		ax.set_xlabel("logL")
 		ax.set_ylabel(target)
 		plt.show()
-
-	# for target in mlp_phot.targets:
-	# 	plt.figure(0)
-	# 	ax = sns.scatterplot(data=df_iso,
-	# 						x="Teff",y=target,
-	# 						legend=True,
-	# 						zorder=0)
-	# 	ax = sns.lineplot(data=df_prd,
-	# 						x="Teff",y=target,
-	# 						legend=True,
-	# 						sort=False,
-	# 						zorder=1,
-	# 						ax=ax)
-
-	# 	ax.set_xlabel("Teff [K]")
-	# 	ax.set_ylabel(target)
-	# 	ax.invert_yaxis()
-	# 	plt.show()

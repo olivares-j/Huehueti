@@ -110,8 +110,8 @@ class MLP_phot:
 		"""Compute NN predictions for given age and theta grid.
 		"""
 
-		# x = pt.stack([pt.tile(logAge, (n_stars,)), logL, logTe],axis=1)
-		x = pt.stack([logAge, logL, logTe],axis=1)
+		x = pt.stack([pt.tile(logAge, (n_stars,)), logL, logTe],axis=1)
+		# x = pt.stack([logAge, logL, logTe],axis=1)
 
 		A0 = (x - self.mu_features)/self.sd_features
 
@@ -164,7 +164,7 @@ if __name__ == "__main__":
 	n_stars = df_iso.shape[0]
 
 	#------------ logL and logTe ------------------------------
-	logAge = df_iso["logAge"].to_numpy()
+	# logAge = df_iso["logAge"].to_numpy()
 	logL = df_iso["logL"].to_numpy()
 	logTe = df_iso["logTe"].to_numpy()
 	# logL = np.linspace(

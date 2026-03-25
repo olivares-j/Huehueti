@@ -3,44 +3,46 @@ import os
 import time
 import dill
 
-os.environ['CUDA_VISIBLE_DEVICES'] = "1"
+os.environ['CUDA_VISIBLE_DEVICES'] = "-1"
 
 sys.path.append("/home/jolivares/Repos/Huehueti/src/Huehueti/")
 from Huehueti import Huehueti
 
-model = "extinction"
-mlp   = "l3_s1100"
+model = "base"
 
-dir_base       = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/50-150Myr/{0}/".format(model)
-file_mlp_phot  = "/home/jolivares/Models/PARSEC/Gaia_EDR3/50-150Myr/MLPs/Phot_{0}/mlp.pkl".format(mlp)
-file_mlp_teff  = None
+dir_base = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/50-150Myr/{0}/".format(model)
+dir_mlps = "/home/jolivares/Models/PARSEC/Gaia_EDR3/50-150Myr/Kroupa/"
 
-list_of_ages      = [60] #list(range(60,160,20))
-list_of_distances = [50] #[50,100,200,400]
-list_of_n_stars   = [20] #[10,20]
-list_of_seeds     = [0,1,2,3,4,5]
+list_of_ages      = list(range(60,160,20))
+list_of_distances = [50,100,200,400]
+list_of_n_stars   = [20]
+list_of_seeds     = [0,1,2,3,4]
 
 dir_inputs  = dir_base + "inputs/"
-dir_outputs = dir_base + "outputs/"
+dir_outputs = dir_base + "Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_1e+03_l2_17_10_15/"
 base_name   = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 
-absolute_photometry = ['Gmag', 'G_BPmag', 'G_RPmag']
+files_mlps = {
+	"G_BPmag":dir_mlps + "Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_1e+03/G_BPmag_l2_s17/seed_0/mlp.pkl",
+	"Gmag":   dir_mlps + "Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_1e+03/Gmag_l2_s10/seed_0/mlp.pkl",
+	"G_RPmag":dir_mlps + "Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_1e+03/G_RPmag_l2_s15/seed_0/mlp.pkl"
+	}
+
+absolute_photometry = ['G_BPmag','Gmag','G_RPmag']
 observables = {
-"photometry":['phot_g_mean_mag', 'phot_bp_mean_mag', 'phot_rp_mean_mag'],
-"photometry_error":['phot_g_mean_mag_error', 'phot_bp_mean_mag_error', 'phot_rp_mean_mag_error'],
+	"photometry":[ 'BP','G', 'RP'],
+	"photometry_error":['e_BP','e_G','e_RP'],
 }
 
 parameters = {"age":None}
 hyperparameters = {"distance":"distance"}
 
 chains ={
-	60:[0,1,2],
+	60:[1,2,3],
 	80:[1,2,3],
 	100:[0,1,2],
-	120:[3],
-	140:[2],
-	# 160:None,180:None,200:None,
-	# 220:None,240:None,260:None,280:None,300:None,3200:None,340:None,360:None,380:None,400:None
+	120:[1,2],
+	140:[1,2],
 }
 
 
@@ -50,9 +52,13 @@ def set_prior(age,distance):
 		'family' : "Uniform",
 		'mu'    : float(age),
 		'sigma' : 30.,
-		'lower' : 50,
-		'upper' : 150,
 		},
+	'log_lum' : {
+		'family' : 'Uniform',
+			},
+	'log_tef' : {
+		'family' : 'Uniform',
+			},
 	'distance_mu' : {
 		'family' : 'Gaussian',
 		'mu' : float(distance),
@@ -101,29 +107,28 @@ for seed in list_of_seeds:
 				start_time = time.time()
 				hue = Huehueti(
 					dir_out = dir_out, 
-					file_mlp_phot=file_mlp_phot,
-					file_mlp_teff=file_mlp_teff,
 					observables=observables,
 					absolute_photometry=absolute_photometry,
 					hyperparameters = hyperparameters,
-				)
+					files_mlps=files_mlps
+					)
 				hue.load_data(
 					file_data = file_data
-				)
+					)
 				hue.setup(
 					model=model,
 					parameters = parameters, 
 					prior = set_prior(age,distance)
-				)
+					)
 				hue.run(
 					target_accept=0.85,
 					init_method="advi",
-					init_iters=int(1e6),
-					nuts_sampler="advi",
-					tuning_iters=int(5e5),
+					init_iters=int(3e5),
+					nuts_sampler="numpyro",
+					tuning_iters=int(2e3),
 					sample_iters=int(2e3),
 					prior_iters=int(2e3),
-					chains=4
+					chains=3
 					)
 				hue.load_trace()#chains=chains[age])
 				hue.convergence()
@@ -133,15 +138,14 @@ for seed in list_of_seeds:
 				hue.plot_predictions()
 				hue.plot_cmd(
 					cmd={
-						"magnitude":"phot_g_mean_mag",
-						"color":["phot_g_mean_mag","phot_rp_mean_mag"]
+						"magnitude":"G",
+						"color":["G","RP"]
 						})
 				hue.save_statistics()
 				end_time = time.time()
 
 				#--------- Save time--------------------
 				data = {
-					"mlp":mlp,
 					"age":age,
 					"distance":distance,
 					"n_stars":n_stars,

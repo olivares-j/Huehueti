@@ -1315,29 +1315,28 @@ if __name__ == "__main__":
 	# Example run when executed as a script. These defaults assume a certain
 	# directory layout (data/, mlps/, outputs/) relative to the current working dir.
 
-	age,distance,n_stars,seed = 140,50,20,1
+	age,distance,n_stars,seed = 140,500,20,0
 	dir_base    = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/50-150Myr/base/"
 	dir_mlps    = "/home/jolivares/Models/PARSEC/Gaia_EDR3/50-150Myr/Kroupa/"
 
 	dir_inputs  = dir_base + "inputs/"
-	dir_outputs = dir_base + "outputs/"
+	dir_outputs = dir_base + "Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_5e+02_l2/"
 	base_name   = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 	file_data = dir_inputs  + base_name.format(age,distance,n_stars,seed)+".csv"
-	dir_out   = dir_outputs + base_name.format(age,distance,n_stars,seed)+"_age_logL_logTe_CosineDecay_6_15_441/"
+	dir_out   = dir_outputs + base_name.format(age,distance,n_stars,seed)+"/"
 
 	files_mlps = {
-	"G_BPmag":dir_mlps + "MLPs_G_BPmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l6_s15_4/mlp.pkl",
-	"Gmag":   dir_mlps +    "MLPs_Gmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l6_s15_4/mlp.pkl",
-	"G_RPmag":dir_mlps + "MLPs_G_RPmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l6_s15_1/mlp.pkl"
+	"G_BPmag":dir_mlps + "Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_1e+03/G_BPmag_l2_s17/seed_0/mlp.pkl",
+	"Gmag":   dir_mlps + "Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_1e+03/Gmag_l2_s10/seed_0/mlp.pkl",
+	"G_RPmag":dir_mlps + "Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_1e+03/G_RPmag_l2_s15/seed_0/mlp.pkl"
 	}
 
 	os.makedirs(dir_out,exist_ok=True)
 
 	absolute_photometry = ['G_BPmag','Gmag','G_RPmag']
-	# absolute_photometry = ['Gmag','G_RPmag']
 	observables = {
-	"photometry":[ 'phot_bp_mean_mag','phot_g_mean_mag', 'phot_rp_mean_mag'],
-	"photometry_error":['phot_bp_mean_mag_error','phot_g_mean_mag_error',  'phot_rp_mean_mag_error'],
+	"photometry":[ 'BP','G', 'RP'],
+	"photometry_error":['e_BP','e_G',  'e_RP'],
 	# "photometry":['phot_g_mean_mag', 'phot_rp_mean_mag'],
 	# "photometry_error":['phot_g_mean_mag_error', 'phot_rp_mean_mag_error'],
 	# "spectroscopy":["teff"],
@@ -1414,6 +1413,6 @@ if __name__ == "__main__":
 	hue.plot_posterior()
 	hue.plot_cpp()
 	hue.plot_predictions()
-	hue.plot_cmd(cmd={"magnitude":"phot_g_mean_mag","color":["phot_g_mean_mag","phot_rp_mean_mag"]})
+	hue.plot_cmd(cmd={"magnitude":"G","color":["G","RP"]})
 	# hue.plot_hrd(magnitude="phot_g_mean_mag")
 	hue.save_statistics()

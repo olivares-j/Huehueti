@@ -2,69 +2,73 @@ import os
 import numpy as np
 from Amasijo import Amasijo
 
-model      = "extinction"
+model      = "base"
 age_range  = "50-150Myr"
 
 dir_inputs = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/{0}/{1}/inputs/".format(age_range,model)
-
-# Amasijo MLPs can have more layers given that these are only used to generate sources
-dir_mlps      = "/home/jolivares/Models/PARSEC/Gaia_EDR3/15-400Myr/MLPs/"
-file_mlp_phot = dir_mlps + "Phot_l7_s512/mlp.pkl"
-file_mlp_teff = dir_mlps + "Teff_l16_s512/mlp.pkl"
-file_mlp_logg = dir_mlps + "Logg_l13_s256/mlp.pkl"
-
 base_name = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 
 list_of_ages      = list(range(60,160,20))
 list_of_distances = [50,100,200,400]
-list_of_n_stars   = [20,10]
-list_of_seeds     = [0,1,2,3,4,5]
+list_of_n_stars   = [20]
+list_of_seeds     = [0,1,2,3,4]
 
 def mass_limits(age,distance):
 	if distance == 50:
 		if age == 60:
-			return [0.1,3.6]
+			return [0.,2.98]
 		elif age == 80:
-			return [0.1,3.4]
+			return [0.,3.15]
 		elif age == 100:
-			return [0.1,3.2]
+			return [0.,2.92]
 		elif age == 120:
-			return [0.1,3.1]
+			return [0.,3.0]
 		elif age == 140:
-			return [0.1,3.1]
+			return [0.,2.89]
 	elif distance == 100:
 		if age == 60:
-			return [0.1,5.0]
+			return [0.0,4.8]
 		elif age == 80:
-			return [0.1,4.8]
+			return [0.,4.5]
 		elif age == 100:
-			return [0.1,4.5]
+			return [0.,4.2]
 		elif age == 120:
-			return [0.1,4.3]
+			return [0.,4.2]
 		elif age == 140:
-			return [0.1,4.1]
+			return [0.,4.0]
 	elif distance == 200:
 		if age == 60:
-			return [0.1,6.0]
+			return [0.0,6.1]
 		elif age == 80:
-			return [0.1,4.8]
+			return [0.,100.0]
 		elif age == 100:
-			return [0.1,4.5]
+			return [0.,100.0]
 		elif age == 120:
-			return [0.1,4.3]
+			return [0.,100.0]
 		elif age == 140:
-			return [0.1,4.1]
+			return [0.,100.0]
 	elif distance == 400:
 		if age == 60:
-			return [0.1,6.0]
+			return [0.105,100.0]
 		elif age == 80:
-			return [0.1,5.0]
+			return [0.107,100.0]
 		elif age == 100:
-			return [0.1,4.0]
+			return [0.12,100.0]
 		elif age == 120:
-			return [0.1,4.0]
+			return [0.12,100.0]
 		elif age == 140:
-			return [0.1,4.0]
+			return [0.12,100.0]
+	elif distance == 500:
+		if age == 60:
+			return [0.125,100.0]
+		elif age == 80:
+			return [0.13,100.0]
+		elif age == 100:
+			return [0.141,100.0]
+		elif age == 120:
+			return [0.146,100.0]
+		elif age == 140:
+			return [0.15,100.0]
 	else:
 		sys.exit("No available distance!")
 
@@ -83,23 +87,25 @@ def phasespace_args(distance):
 
 def isochrones_args(age,distance):
 	args = {
-		"model":"PARSEC",
-		"age": float(age),
-		"Av_limits":[0.0,5.0],
-		"MIST_args":{
-			"mass_limits":mass_limits(age,distance),
-			"metallicity":0.012,
-			},
-		"PARSEC_args":{
-				"file_mlp_phot":file_mlp_phot,
-				"file_mlp_teff":file_mlp_teff,
-				"file_mlp_logg":file_mlp_logg,
-				"mass_limits":mass_limits(age,distance),
-				"bands_wavelengths":[6230.0,5050.0,7730.0], # Same order as bands
-				"Rv":3.1
-				},          
-		"bands":["G","BP","RP"]#,"gP1", "rP1", "iP1", "zP1", "yP1","J", "H", "Ks"],
-		}
+	"model":"PARSEC",
+	"age": float(age),
+	"Av_limits":[0.0,0.0],
+	"mass_limits":mass_limits(age,distance),
+	"MIST_args":{
+		"metallicity":0.012,
+		},
+	"PARSEC_args":{
+		"files":[
+		"/home/jolivares/Models/PARSEC/Gaia_EDR3/50-150Myr/Kroupa/output_1myr.dat",
+		"/home/jolivares/Models/PARSEC/2MASS/50-150Myr/Kroupa/output_1myr.dat",
+		],
+		"max_label":1,
+		"bands_wavelengths":[6217.6,5109.7,7769.0,12350.,16620.,21590.], # Same order as bands
+		"Rv":3.1
+		},
+	"bands":["G","BP","RP","J","H","Ks"],
+	"uncertainties":[0.001,0.02,0.004,0.025,0.030,0.025]
+	}
 	return args
 
 

@@ -25,15 +25,15 @@ def sigmoid(x):
 def Phot_band(X,W,b,mu,sd):
 	A1  = sigmoid(pt.dot(X,  W[0]) + b[0])
 	A2  = sigmoid(pt.dot(A1, W[1]) + b[1])
-	A3  = sigmoid(pt.dot(A2, W[2]) + b[2])
-	A4  = sigmoid(pt.dot(A3, W[3]) + b[3])
-	A5  = sigmoid(pt.dot(A4, W[4]) + b[4])
-	A6  = sigmoid(pt.dot(A5, W[5]) + b[5])
+	# A3  = sigmoid(pt.dot(A2, W[2]) + b[2])
+	# A4  = sigmoid(pt.dot(A3, W[3]) + b[3])
+	# A5  = sigmoid(pt.dot(A4, W[4]) + b[4])
+	# A6  = sigmoid(pt.dot(A5, W[5]) + b[5])
 	# A7  = sigmoid(pt.dot(A6, W[6]) + b[6])
 	# Final linear output (no activation)
-	out = pt.dot(A6,W[6]) + b[6]
+	out = pt.dot(A2,W[2]) + b[2]
 
-	return (out.flatten()*sd) + mu
+	return out.flatten()
 
 class MLP_phot:
 	"""Wrapper around a pretrained multilayer perceptron.
@@ -74,7 +74,7 @@ class MLP_phot:
 
 			assert tmp_features == features, "Features mismatch! Expected: {0}".format(features)
 			assert tmp_targets[0] in targets, "Target mismatch! Expected on of {0}".format(targets)
-			assert tmp_num_lyrs == 6, "Error: mismatch in number of layers! Expected 4"
+			assert tmp_num_lyrs == 2, "Error: mismatch in number of layers! Expected 4"
 
 			band["W"] = tmp_weights[::2]
 			band["b"] = tmp_weights[1::2]
@@ -110,7 +110,8 @@ class MLP_phot:
 		"""Compute NN predictions for given age and theta grid.
 		"""
 
-		x = pt.stack([pt.tile(logAge, (n_stars,)), logL, logTe],axis=1)
+		# x = pt.stack([pt.tile(logAge, (n_stars,)), logL, logTe],axis=1)
+		x = pt.stack([logAge, logL, logTe],axis=1)
 
 		A0 = (x - self.mu_features)/self.sd_features
 
@@ -136,19 +137,9 @@ if __name__ == "__main__":
 
 	file_iso      = dir_mlps + "output_0.1myr.dat"
 	files_mlps = {
-	"G_BPmag":dir_mlps + "MLPs_G_BPmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l7_s15_1/mlp.pkl",
-	"Gmag":   dir_mlps +    "MLPs_Gmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l7_s15_1/mlp.pkl",
-	"G_RPmag":dir_mlps + "MLPs_G_RPmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l7_s15_1/mlp.pkl"
-	}
-	files_mlps = {
-	"G_BPmag":dir_mlps + "MLPs_G_BPmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l6_s20_0/mlp.pkl",
-	"Gmag":   dir_mlps +    "MLPs_Gmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l6_s20_0/mlp.pkl",
-	"G_RPmag":dir_mlps + "MLPs_G_RPmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l6_s20_0/mlp.pkl"
-	}
-	files_mlps = {
-	"G_BPmag":dir_mlps + "MLPs_G_BPmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l6_s15_4/mlp.pkl",
-	"Gmag":   dir_mlps +    "MLPs_Gmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l6_s15_4/mlp.pkl",
-	"G_RPmag":dir_mlps + "MLPs_G_RPmag_logAge_logL_logTe_1e-01_1e-04_0.86_CosineDecay_1e+04/Phot_l6_s15_1/mlp.pkl"
+	"G_BPmag":dir_mlps + "Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_1e+03/G_BPmag_l2_s17/seed_0/mlp.pkl",
+	"Gmag":   dir_mlps + "Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_1e+03/Gmag_l2_s10/seed_0/mlp.pkl",
+	"G_RPmag":dir_mlps + "Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_1e+03/G_RPmag_l2_s15/seed_0/mlp.pkl"
 	}
 	targets = ["G_BPmag","Gmag","G_RPmag"]
 	features = ["logAge","logL","logTe"]
@@ -169,10 +160,11 @@ if __name__ == "__main__":
 					comment="#")
 	df_iso = df_iso.loc[df_iso["label"]<= max_label]
 	df_iso = df_iso.loc[:,sum([features,targets],[])]
-	df_iso = df_iso.groupby("logAge").get_group(logAge)
+	# df_iso = df_iso.groupby("logAge").get_group(logAge)
 	n_stars = df_iso.shape[0]
 
 	#------------ logL and logTe ------------------------------
+	logAge = df_iso["logAge"].to_numpy()
 	logL = df_iso["logL"].to_numpy()
 	logTe = df_iso["logTe"].to_numpy()
 	# logL = np.linspace(

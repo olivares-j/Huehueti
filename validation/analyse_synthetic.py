@@ -38,7 +38,7 @@ cases = [case]
 
 list_of_ages      = list(range(60,160,20))
 list_of_distances = [50,100,200,400]
-list_of_n_stars   = [10,20]
+list_of_n_stars   = [20]
 list_of_seeds     = [0,1,2,3,4]
 
 do_process = True
@@ -50,7 +50,7 @@ file_plt_grp  = dir_fig + "{0}_group-level.pdf"
 file_plt_src  = dir_fig + "{0}_source-level.pdf"
 
 
-base_dir_out = "{0}{1}/outputs/"
+base_dir_out = "{0}{1}/Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_5e+02_l2/"
 base_dir_in  = "{0}{1}/inputs/"
 base_obs_grp = "{0}/{1}/Global_statistics.csv"
 base_obs_src = "{0}/{1}/Sources_statistics.csv"
@@ -60,8 +60,8 @@ base_name    = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 #---------------------------------------------------------------------------
 
 coordinates = ["X","Y","Z","U","V","W"]
-true_src_columns = ["source_id","mass"]
-obs_src_columns = ["source_id","statistic","mass"]
+true_src_columns = ["source_id","teff"]
+obs_src_columns = ["source_id","statistic","tef"]
 obs_grp_columns = ["Parameter","mean","sd","hdi_2.5%","hdi_97.5%","r_hat","ess_bulk","ess_tail"]
 #-----------------------------------------------------------------------------
 
@@ -127,7 +127,7 @@ if do_process:
 											usecols=true_src_columns)
 						df_true_src.set_index("source_id",inplace=True)
 						df_true_src.columns = pn.MultiIndex.from_product(
-											[["mass"],["true"]])
+											[["tef"],["true"]])
 						#----------------------------------------------------
 
 						#---------- Join ------------------------

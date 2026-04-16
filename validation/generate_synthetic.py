@@ -2,43 +2,71 @@ import os
 import numpy as np
 from Amasijo import Amasijo
 
-model      = "base"
-age_range  = "50-150Myr"
+model      = "outliers"
+age_range  = "20-220Myr"
 
 dir_inputs = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/{0}/{1}/inputs/".format(age_range,model)
 base_name = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 
-list_of_ages      = list(range(60,160,20))
+list_of_ages      = list(range(20,240,20))
 list_of_distances = [50,100,200,400]
-list_of_n_stars   = [20]
+list_of_n_stars   = [15,30,60]
 list_of_seeds     = [0,1,2,3,4]
 
 def mass_limits(age,distance):
 	if distance == 50:
-		if age == 60:
+		if age == 20:
+			return [0.,3.20]
+		elif age == 40:
+			return [0.,3.18]
+		elif age == 60:
 			return [0.,2.98]
 		elif age == 80:
 			return [0.,3.15]
 		elif age == 100:
 			return [0.,2.92]
 		elif age == 120:
-			return [0.,3.0]
+			return [0.,3.00]
 		elif age == 140:
 			return [0.,2.89]
+		elif age == 160:
+			return [0.,2.75]
+		elif age == 180:
+			return [0.,2.75]
+		elif age == 200:
+			return [0.,2.75]
+		elif age == 220:
+			return [0.,2.75]
 	elif distance == 100:
-		if age == 60:
-			return [0.0,4.8]
+		if age == 20:
+			return [0.,5.7]
+		elif age == 40:
+			return [0.,5.3]
+		elif age == 60:
+			return [0.,4.8]
 		elif age == 80:
-			return [0.,4.5]
+			return [0.,4.6]
 		elif age == 100:
-			return [0.,4.2]
+			return [0.,4.5]
 		elif age == 120:
 			return [0.,4.2]
 		elif age == 140:
 			return [0.,4.0]
+		elif age == 160:
+			return [0.,3.8]
+		elif age == 180:
+			return [0.,3.7]
+		elif age == 200:
+			return [0.,3.6]
+		elif age == 220:
+			return [0.,3.5]
 	elif distance == 200:
-		if age == 60:
-			return [0.0,6.1]
+		if age == 20:
+			return [0.,8.7]
+		elif age == 40:
+			return [0.,7.1]
+		elif age == 60:
+			return [0.,6.1]
 		elif age == 80:
 			return [0.,100.0]
 		elif age == 100:
@@ -46,34 +74,44 @@ def mass_limits(age,distance):
 		elif age == 120:
 			return [0.,100.0]
 		elif age == 140:
+			return [0.,100.0]
+		elif age == 160:
+			return [0.,100.0]
+		elif age == 180:
+			return [0.,100.0]
+		elif age == 200:
+			return [0.,100.0]
+		elif age == 220:
 			return [0.,100.0]
 	elif distance == 400:
-		if age == 60:
-			return [0.105,100.0]
+		if age == 20:
+			return [0.,10.9]
+		elif age == 40:
+			return [0.,100.0]
+		elif age == 60:
+			return [0.,100.0]
 		elif age == 80:
-			return [0.107,100.0]
+			return [0.,100.0]
 		elif age == 100:
-			return [0.12,100.0]
+			return [0.,100.0]
 		elif age == 120:
-			return [0.12,100.0]
+			return [0.,100.0]
 		elif age == 140:
-			return [0.12,100.0]
-	elif distance == 500:
-		if age == 60:
-			return [0.125,100.0]
-		elif age == 80:
-			return [0.13,100.0]
-		elif age == 100:
-			return [0.141,100.0]
-		elif age == 120:
-			return [0.146,100.0]
-		elif age == 140:
-			return [0.15,100.0]
+			return [0.,100.0]
+		elif age == 160:
+			return [0.1,100.0]
+		elif age == 180:
+			return [0.1,100.0]
+		elif age == 200:
+			return [0.1,100.0]
+		elif age == 220:
+			return [0.1,100.0]
 	else:
 		sys.exit("No available distance!")
 
 def phasespace_args(distance):
 	args = {
+	"coordinates":["X_gal","Y_gal","Z_gal","U_gal","V_gal","W_gal"],
 	"position":{"family":"Gaussian",
 				"location":np.array([float(distance),0.0,0.0]),
 				"covariance":np.diag([9.,9.,9.])},
@@ -96,8 +134,8 @@ def isochrones_args(age,distance):
 		},
 	"PARSEC_args":{
 		"files":[
-		"/home/jolivares/Models/PARSEC/Gaia_EDR3/50-150Myr/Kroupa/output_1myr.dat",
-		"/home/jolivares/Models/PARSEC/2MASS/50-150Myr/Kroupa/output_1myr.dat",
+		"/home/jolivares/Models/PARSEC/20-220Myr/Gaia_EDR3_0.1myr.dat",
+		"/home/jolivares/Models/PARSEC/20-220Myr/2MASS_0.1myr.dat",
 		],
 		"max_label":1,
 		"bands_wavelengths":[6217.6,5109.7,7769.0,12350.,16620.,21590.], # Same order as bands
@@ -128,5 +166,5 @@ for age in list_of_ages:
 				ama.generate_cluster(file_data,
 							n_stars=n_stars,
 							angular_correlations=None)
-				ama.plot_cluster(
-							file_plot=file_plot)
+				# ama.plot_cluster(
+				# 			file_plot=file_plot)

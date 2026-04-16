@@ -29,28 +29,35 @@ import seaborn as sns
 
 pn.set_option('display.max_rows', None) 
 
+# base_dir = "Optuna_logAge_logL_epochs_5e+02_0.1myr_l3/"
+# base_dir = "Optuna_logAge_Mini_epochs_5e+02_0.1myr_l2/"
+# base_dir = "Optuna_logAge_Mini_logTe_epochs_5e+02_0.1myr_l2_FullRankADVI/"
+# base_dir = "Optuna_logAge_logL_epochs_5e+02_0.1myr_l2_FullRankADVI/"
+base_dir = "Optuna_logAge_logL_epochs_5e+02_0.1myr_l2_FullRankADVI/"
 
-dir_base = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/50-150Myr/"
-dir_fig  = "/home/jolivares/Dropbox/MisArticulos/BayesianAges/Isochrones/Method/Figures/"
+dir_base = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/20-220Myr/"
+dir_fig  = "/home/jolivares/Dropbox/MisArticulos/BayesianAges/Isochrones/Method/Figures/20-220Myr/"
+dir_fig += base_dir
+os.makedirs(dir_fig,exist_ok=True)
 
-case = "base"
-cases = [case]
 
-list_of_ages      = list(range(60,160,20))
+models = ["base","outliers"]
+
+list_of_ages      = list(range(20,240,20))
 list_of_distances = [50,100,200,400]
-list_of_n_stars   = [20]
+list_of_n_stars   = [15]
 list_of_seeds     = [0,1,2,3,4]
 
 do_process = True
 do_plt_grp = True
 do_plt_src = True
 
-file_data_all = dir_base + "data_cases.h5"
-file_plt_grp  = dir_fig + "{0}_group-level.pdf"
-file_plt_src  = dir_fig + "{0}_source-level.pdf"
+file_data_all = dir_base + "data_models.h5"
+file_plt_grp  = dir_fig + "group-level.pdf"
+file_plt_src  = dir_fig + "source-level.pdf"
 
 
-base_dir_out = "{0}{1}/Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_5e+02_l2/"
+base_dir_out = "{0}{1}/"+base_dir
 base_dir_in  = "{0}{1}/inputs/"
 base_obs_grp = "{0}/{1}/Global_statistics.csv"
 base_obs_src = "{0}/{1}/Sources_statistics.csv"
@@ -60,23 +67,25 @@ base_name    = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 #---------------------------------------------------------------------------
 
 coordinates = ["X","Y","Z","U","V","W"]
-true_src_columns = ["source_id","teff"]
-obs_src_columns = ["source_id","statistic","tef"]
 obs_grp_columns = ["Parameter","mean","sd","hdi_2.5%","hdi_97.5%","r_hat","ess_bulk","ess_tail"]
+true_src_columns = ["source_id","logL"]
+obs_src_columns = ["source_id","statistic","log_lum"]
+mapper_true2obs = {"logL":"log_lum"}
+
 #-----------------------------------------------------------------------------
 
 #------------------------Statistics -----------------------------------
 sts_grp = [
-		{"key":"err",     "name":"Error [%]",       "ylim":[-100,100]},
-		{"key":"unc",     "name":"Uncertainty [%]", "ylim":[0,100]   },
+		{"key":"err",     "name":"Error [%]",       "ylim":[-20,20]},
+		{"key":"unc",     "name":"Uncertainty [%]", "ylim":[0,5]   },
 		{"key":"crd",     "name":"Credibility [%]", "ylim":[0,100]   },
-		{"key":"r_hat",   "name":"$\\hat{R}$",      "ylim":[0,5]     },
-		{"key":"ess_bulk","name":"ESS bulk",        "ylim":[0,5]     },
-		{"key":"ess_tail","name":"ESS tail",        "ylim":[0,5]     },
+		{"key":"r_hat",   "name":"$\\hat{R}$",      "ylim":[0.9,1.5]     },
+		{"key":"ess_bulk","name":"ESS bulk",        "ylim":[0,None]     },
+		{"key":"ess_tail","name":"ESS tail",        "ylim":[0,None]     },
 		]
 sts_src = [
-		{"key":"err", "name":"Error [%]"      ,"ylim":[-100,100]},
-		{"key":"unc", "name":"Uncertainty [%]","ylim":[0,100]   },
+		{"key":"err", "name":"Error [%]"      ,"ylim":[-3,10]},
+		{"key":"unc", "name":"Uncertainty [%]","ylim":[0,10]   },
 		{"key":"crd", "name":"Credibility [%]","ylim":[0,100]   }
 		]
 #-----------------------------------------------------------------------
@@ -87,11 +96,11 @@ sts_src = [
 if do_process:
 	dfss_grp = []
 	dfss_src = []
-	for case in cases:
-		print(40*"+" +" " + case + " " +40*"+")
-		dir_out   = base_dir_out.format(dir_base,case)
-		dir_in    = base_dir_in.format(dir_base,case)
-		file_data = base_dat.format(dir_base,case)
+	for model in models:
+		print(40*"+" +" " + model + " " +40*"+")
+		dir_out   = base_dir_out.format(dir_base,model)
+		dir_in    = base_dir_in.format(dir_base,model)
+		file_data = base_dat.format(dir_base,model)
 		dfs_grp = []
 		dfs_src = []
 		for age in list_of_ages:
@@ -122,12 +131,14 @@ if do_process:
 											orient="index",
 											columns=["true"])
 						df_true_grp.index.name = "Parameter"
-
 						df_true_src = pn.read_csv(file_true_src,
 											usecols=true_src_columns)
-						df_true_src.set_index("source_id",inplace=True)
+						df_true_src.set_index("source_id",
+											inplace=True)
+						df_true_src.rename(columns=mapper_true2obs,
+											inplace=True)
 						df_true_src.columns = pn.MultiIndex.from_product(
-											[["tef"],["true"]])
+											[df_true_src.columns,["true"]])
 						#----------------------------------------------------
 
 						#---------- Join ------------------------
@@ -142,7 +153,6 @@ if do_process:
 										left_index=True,
 										right_index=True)
 						#----------------------------------------
-						
 
 						#-------------- Asses convergence ------------------
 						if any(df_grp["r_hat"]>1.05):
@@ -172,9 +182,9 @@ if do_process:
 						df_src = df_src.loc[:,["err","unc","crd"]]
 						#-------------------------------------------------
 
-						#------------ Case -------------
-						df_grp["Case"] = case
-						df_src["Case"] = case
+						#------------ Model -------------
+						df_grp["Model"] = model
+						df_src["Model"] = model
 
 						df_grp["n_stars"] = n_stars
 						df_src["n_stars"] = n_stars
@@ -192,8 +202,8 @@ if do_process:
 						df_grp.reset_index(inplace=True,drop=True)
 						df_src.reset_index(inplace=True)
 
-						df_grp.set_index(["Case","age","distance","n_stars","seed"],inplace=True)
-						df_src.set_index(["Case","age","distance","n_stars","seed"],inplace=True)
+						df_grp.set_index(["Model","age","distance","n_stars","seed"],inplace=True)
+						df_src.set_index(["Model","age","distance","n_stars","seed"],inplace=True)
 
 						#----------- Append ----------------
 						dfs_grp.append(df_grp)
@@ -234,33 +244,30 @@ if do_plt_grp:
 
 	df_grp.reset_index(inplace=True)
 
-	for case in cases:
-		pdf = PdfPages(filename=file_plt_grp.format(case))
-		for st in sts_grp:
-			fg = sns.FacetGrid(data=df_grp,
-							col="distance",
-							# row="n_stars",
-							sharey=True,
-							sharex=True,
-							margin_titles=True,
-							# col_wrap=6,
-							# hue="seed",
-							hue="n_stars"
-							)
-			# fg.map(sns.scatterplot,"age",st["key"])
-			fg.map(sns.lineplot,"age",st["key"])
-			fg.set_xlabels("Age [Myr]")
-			fg.set_ylabels(st["name"])
-			fg.add_legend()
-
-			sns.move_legend(fg,
-					loc="lower center",
-					bbox_to_anchor=(.45, 1),
-					ncol=6)
-			plt.subplots_adjust(wspace=0.1)
-			pdf.savefig(bbox_inches='tight',dpi=300)
-			plt.close()
-		pdf.close()
+	pdf = PdfPages(filename=file_plt_grp)
+	for st in sts_grp:
+		fg = sns.relplot(data=df_grp,
+						x="age",
+						y=st["key"],
+						col="distance",
+						style="Model",
+						hue="n_stars",
+						kind="line",
+						palette="tab10",
+						facet_kws={"margin_titles":True},
+						)
+		fg.set_xlabels("Age [Myr]")
+		fg.set_ylabels(st["name"])
+		fg.set(ylim=st["ylim"])
+		fg.add_legend()
+		sns.move_legend(fg,
+				loc="lower center",
+				bbox_to_anchor=(.45, 1),
+				ncol=6)
+		plt.subplots_adjust(wspace=0.1)
+		pdf.savefig(bbox_inches='tight',dpi=300)
+		plt.close()
+	pdf.close()
 	#-------------------------------------------------------------------------
 
 if do_plt_src:
@@ -271,27 +278,30 @@ if do_plt_src:
 
 	df_src.reset_index(inplace=True)
 
-	for case in cases:
-		pdf = PdfPages(filename=file_plt_src.format(case))
-		for st in sts_src:
-			fg = sns.FacetGrid(data=df_src,
-							col="distance",
-							sharey=True,
-							sharex=True,
-							margin_titles=True,
-							col_wrap=6,
-							hue="n_stars")
-			fg.map(sns.lineplot,"age",st["key"])
-			fg.set_xlabels("Age [Myr]")
-			fg.set_ylabels(st["name"])
-			fg.add_legend()
+	
+	pdf = PdfPages(filename=file_plt_src)
+	for st in sts_src:
+		fg = sns.relplot(data=df_src,
+						x="age",
+						y=st["key"],
+						col="distance",
+						style="Model",
+						hue="n_stars",
+						kind="line",
+						palette="tab10",
+						facet_kws={"margin_titles":True},
+						)
+		fg.set_xlabels("Age [Myr]")
+		fg.set_ylabels(st["name"])
+		fg.set(ylim=st["ylim"])
+		fg.add_legend()
 
-			sns.move_legend(fg,
-					loc="lower center",
-					bbox_to_anchor=(.45, 1),
-					ncol=5)
-			plt.subplots_adjust(wspace=0.1)
-			pdf.savefig(bbox_inches='tight')
-			plt.close()
-		pdf.close()
+		sns.move_legend(fg,
+				loc="lower center",
+				bbox_to_anchor=(.45, 1),
+				ncol=5)
+		plt.subplots_adjust(wspace=0.1)
+		pdf.savefig(bbox_inches='tight')
+		plt.close()
+	pdf.close()
 	#-------------------------------------------------------------------------

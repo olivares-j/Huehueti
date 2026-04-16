@@ -252,6 +252,7 @@ class Huehueti:
 		parameters: Dict[str,float],
 		prior: Dict[str, Any],
 		model: str = "base",
+		features: List[str] = ["logAge","logL"]
 	) -> None:
 		"""
 		Initialize the MLP and probabilistic model.
@@ -266,7 +267,7 @@ class Huehueti:
 		"""
 		#----------------- Initialize NNs -------------------
 		self.mlp_phot = MLP_phot(files_mlps=self.files_mlps,
-			features=["logAge","logL","logTe"],
+			features=features,
 			targets=self.absolute_photometry)
 		#----------------------------------------------------
 
@@ -349,7 +350,6 @@ class Huehueti:
 			spectroscopy_sd = None
 			spectroscopy_ix = None
 		#---------------------------------------------------------------------------------
-
 
 		if model == "base":
 			self.Model = Model_v0(
@@ -690,7 +690,7 @@ class Huehueti:
 		#------- Build lists of variables grouped by use (source-level vs global) -----------
 		source_variables = list(filter(lambda x: (("Av" in x)
 											or ("log_lum" in x)
-											or ("tef" in x)
+											# or ("teff" in x)
 											or ("distance" in x)
 											or ("astrometry" in x)
 											or ("photometry" in x)
@@ -727,7 +727,7 @@ class Huehueti:
 			if not (
 				(var == "Av") or
 				(var == "log_lum") or 
-				(var == "tef") or 
+				# (var == "tef") or 
 				(var == "distance") or
 				("astrometry" in var) or 
 				("photometry" in var) or
@@ -1032,14 +1032,14 @@ class Huehueti:
 		# Use mean distance from posterior for converting absolute->apparent.
 		distance = np.mean(self.trace.posterior["distance"].values.flatten())
 		log_lums = self.trace.posterior["log_lum"].values.flatten()
-		log_tefs = self.trace.posterior["log_tef"].values.flatten()
+		# log_tefs = self.trace.posterior["log_tef"].values.flatten()
 		log_lum = np.linspace(np.min(log_lums),np.max(log_lums),n_points)
-		log_tef = np.linspace(np.min(log_tefs),np.max(log_tefs),n_points)
+		# log_tef = np.linspace(np.min(log_tefs),np.max(log_tefs),n_points)
 
 		dfs_smp = []
 		# For each sampled age, query MLP to produce absolute photometry and convert to apparent.
 		for age in ages:
-			absolute_photometry = self.mlp_phot(np.log10(age*1.e6),log_lum,log_tef,n_points)
+			absolute_photometry = self.mlp_phot(np.log10(age*1.e6),log_lum,n_points)
 			photometry = absolute_to_apparent(absolute_photometry,distance)
 			df_tmp = pn.DataFrame(
 					data=photometry.eval(),
@@ -1048,7 +1048,6 @@ class Huehueti:
 			df_tmp.index.name = "star"
 			df_tmp["age"] = age
 			df_tmp["log_lum"] = log_lum
-			df_tmp["log_tef"] = log_tef
 
 			df_tmp.set_index("age",append=True,inplace=True)
 			dfs_smp.append(df_tmp)
@@ -1315,24 +1314,26 @@ if __name__ == "__main__":
 	# Example run when executed as a script. These defaults assume a certain
 	# directory layout (data/, mlps/, outputs/) relative to the current working dir.
 
-	age,distance,n_stars,seed = 140,500,20,0
-	dir_base    = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/50-150Myr/base/"
-	dir_mlps    = "/home/jolivares/Models/PARSEC/Gaia_EDR3/50-150Myr/Kroupa/"
+	model = "outliers"
+	case = "Optuna_logAge_logL_epochs_5e+02_0.1myr"
+	age,distance,n_stars,seed = 20,50,15,4
+	dir_base    = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/20-220Myr/{0}/".format(model)
+	dir_mlps    = "/home/jolivares/Models/PARSEC/20-220Myr/"
 
 	dir_inputs  = dir_base + "inputs/"
-	dir_outputs = dir_base + "Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_5e+02_l2/"
+	dir_outputs = dir_base + case + "_l2_FullRankADVI_test/"
 	base_name   = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 	file_data = dir_inputs  + base_name.format(age,distance,n_stars,seed)+".csv"
 	dir_out   = dir_outputs + base_name.format(age,distance,n_stars,seed)+"/"
-
-	files_mlps = {
-	"G_BPmag":dir_mlps + "Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_1e+03/G_BPmag_l2_s17/seed_0/mlp.pkl",
-	"Gmag":   dir_mlps + "Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_1e+03/Gmag_l2_s10/seed_0/mlp.pkl",
-	"G_RPmag":dir_mlps + "Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_1e+03/G_RPmag_l2_s15/seed_0/mlp.pkl"
-	}
-
 	os.makedirs(dir_out,exist_ok=True)
 
+	files_mlps = {
+	"G_BPmag":dir_mlps + case + "/G_BPmag_l2/seed_0/mlp.pkl",
+	"Gmag":   dir_mlps + case + "/Gmag_l2/seed_0/mlp.pkl",
+	"G_RPmag":dir_mlps + case + "/G_RPmag_l2/seed_0/mlp.pkl"
+	}
+
+	features = ["logAge","logL"]
 	absolute_photometry = ['G_BPmag','Gmag','G_RPmag']
 	observables = {
 	"photometry":[ 'BP','G', 'RP'],
@@ -1354,9 +1355,6 @@ if __name__ == "__main__":
 		'log_lum' : {
 			'family' : 'Uniform',
 			},
-		'log_tef' : {
-			'family' : 'Uniform',
-			},
 		'distance_mu' : {
 			'family' : 'Gaussian',
 			'mu' : 136.,
@@ -1375,7 +1373,8 @@ if __name__ == "__main__":
 			},
 		"outliers":{
 			"family":"StudentT",
-			"beta": 1/10.,
+			# "family":"SkewNormal",
+			"beta": 1/30.,
 			"scale":1.0
 		}
 	}
@@ -1391,18 +1390,17 @@ if __name__ == "__main__":
 		file_data = file_data
 		)
 	hue.setup(
+		model=model,
 		parameters = parameters, 
-		prior = prior
+		prior = prior,
+		features=features
 		)
 	# hue.plot_pgm()
 	hue.run(
-		init_method="advi",
-		# init_method="fullrank_advi",
+		init_method="fullrank_advi",
 		init_iters=int(5e5),
-		# nuts_sampler="advi",
-		# nuts_sampler="fullrank_advi",
-		nuts_sampler="numpyro",
-		# tuning_iters=int(1e4),
+		nuts_sampler="fullrank_advi",
+		# nuts_sampler="numpyro",
 		tuning_iters=int(2e3),
 		sample_iters=int(2e3),
 		prior_iters=int(2e3),

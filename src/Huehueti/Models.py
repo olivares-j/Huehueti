@@ -13,6 +13,16 @@ import pytensor
 import pytensor.tensor as pt
 from pymc import Model
 
+def linear(x,a,b):
+	return a*x + b
+
+# print("lower",linear(8.14613,*[-0.72855578,3.0677147 ]),-2.865)
+# print("upper",linear(8.14613,*[-1.58449405,15.91599175]),3.007)
+# print("lower",linear(7.77815,*[-0.72855578,3.0677147 ]),-2.595)
+# print("upper",linear(7.77815,*[-1.58449405,15.91599175]),3.58)
+# sys.exit()
+
+
 def absolute_to_apparent(M, distance):
     """Convert absolute magnitude to relative magnitude.
     m = 
@@ -124,6 +134,8 @@ class Model_v0(Model):
 				raise KeyError('Unknown logAge prior distribution')
 		else:
 			age = pm.Deterministic("age",pytensor.shared(parameters["age"]))
+
+		log_age = pt.log10(age*1.e6)
 		#===============================================================================
 
 		#================ Distance =====================================================
@@ -167,50 +179,37 @@ class Model_v0(Model):
 								dims="source_id")
 		#=====================================================================================
 
-		#====================== logL and logTe =============================
+		#====================== logL =============================
 		log_lum = pm.Uniform('log_lum',dims="source_id",
-							lower=mlp_phot.domain["logL"][0],
-							upper=mlp_phot.domain["logL"][1],
-							initval=np.full(shape=n_stars,
-								fill_value=mlp_phot.domain["logL"][0]+1e-3)
+							# lower=linear(log_age,*prior["log_lum"]["lower_par"]),
+							# upper=linear(log_age,*prior["log_lum"]["upper_par"]),
+							# lower=prior["log_lum"]["lower"],
+							# upper=prior["log_lum"]["upper"],
+							lower = mlp_phot.domain["logL"][0],
+							upper = mlp_phot.domain["logL"][1]
 							)
-		log_tef = pm.Uniform('log_tef',dims="source_id",
-							lower=mlp_phot.domain["logTe"][0],
-							upper=mlp_phot.domain["logTe"][1],
-							initval=np.full(shape=n_stars,
-								fill_value=mlp_phot.domain["logTe"][0]+1e-3)
-							)
-		tef = pm.Deterministic("tef",pt.pow(10,log_tef))
+		# theta = pm.Uniform("theta",dims="source_id",
+		# 					lower=0.0,
+		# 					upper=1.0
+		# 					)
+		# lower_lum = linear(log_age,*prior["log_lum"]["lower_par"])
+		# upper_lum = linear(log_age,*prior["log_lum"]["upper_par"])
+		# lower_lum = prior["log_lum"]["lower"]
+		# upper_lum = prior["log_lum"]["upper"]
+		# lower_lum = mlp_phot.domain["logL"][0]
+		# upper_lum = mlp_phot.domain["logL"][1]
+		# log_lum = pm.Deterministic('log_lum',dims="source_id",
+		# 					var=lower_lum + (upper_lum-lower_lum)*theta
+		# 					)
 		#===================================================================
 
-		#===================== Photometry =================================================
-		# # Photometric dispersion is a per-band parameter (dims="photometric_names")
-		# if parameters["photometric_dispersion"] is None:
-		# 	if prior["photometric_dispersion"]["family"] == 'Exponential':
-		# 		photometric_dispersion = pm.Exponential('photometric_dispersion',
-		# 								scale=prior["photometric_dispersion"]["sigma"],
-		# 								dims="photometric_names")
-		# 	elif prior["photometric_dispersion"]["family"] == 'Gamma':
-		# 		photometric_dispersion = pm.Gamma('photometric_dispersion',
-		# 								alpha=2.0,
-		# 								beta=prior["photometric_dispersion"]["beta"],
-		# 								dims="photometric_names")
-		# 	else:
-		# 		raise KeyError('Unknown photometric_dispersion distribution')
-		# else:
-		# 	photometric_dispersion = pm.Deterministic("photometric_dispersion",
-		# 								pytensor.shared(parameters["photometric_dispersion"]))
-		#---------------------------------------------------------------------------------
-
-		# Combine observed photometric uncertainties with model photometric dispersion
-		# photometry_sigma = pm.math.sqrt(photometry_sd**2 + photometric_dispersion**2)
-		
+		#===================== Photometry =================================================		
 		#--------------------- True value ---------------------------------------------------
 		# Convert absolute photometry to apparent magnitudes using per-source distance
-		log_age = pt.log10(age*1.e6)
-		photometry = pm.Deterministic('photometry',
-							var=absolute_to_apparent(mlp_phot(log_age,log_lum,log_tef, n_stars),distance),
-							dims=("source_id","photometry_names"))
+		
+		photometry = pm.Deterministic('photometry',dims=("source_id","photometry_names"),
+							var=absolute_to_apparent(mlp_phot(log_age,log_lum,n_stars),distance),
+							)
 		#------------------------------------------------------------------------------------
 
 		#-------------- Likelihood --------------------
@@ -267,7 +266,6 @@ class Model_v1(Model):
 	
 	def __init__(self,
 		mlp_phot,
-		mlp_teff,
 		parameters : dict,
 		prior : dict,
 		identifiers : np.ndarray,
@@ -312,20 +310,22 @@ class Model_v1(Model):
 		if parameters["age"] is None:
 			# Age prior can be either TruncatedNormal or Uniform as provided by caller.
 			if prior["age"]["family"] == 'TruncatedNormal':
-				age = pm.TruncatedNormal('age',
-						mu = prior['age']['mu'],
-						sigma = prior['age']['sigma'],
-						lower = prior['age']['lower'],
-						upper = prior['age']['upper'],
+				age = pm.TruncatedNormal("age",
+						mu = prior["age"]['mu'],
+						sigma = prior["age"]['sigma'],
+						lower=np.pow(10,mlp_phot.domain["logAge"][0])/np.pow(10,6),
+						upper=np.pow(10,mlp_phot.domain["logAge"][1])/np.pow(10,6),
 						)
 			elif prior["age"]["family"] == 'Uniform':
-				age = pm.Uniform('age', 
-						lower = prior['age']['lower'],
-						upper = prior['age']['upper'],)
+				age = pm.Uniform("age", 
+						lower=np.pow(10,mlp_phot.domain["logAge"][0])/np.pow(10,6),
+						upper=np.pow(10,mlp_phot.domain["logAge"][1])/np.pow(10,6),)
 			else: 
-				raise KeyError('Unknown age prior distribution')
+				raise KeyError('Unknown logAge prior distribution')
 		else:
 			age = pm.Deterministic("age",pytensor.shared(parameters["age"]))
+
+		log_age = pt.log10(age*1.e6)
 		#===============================================================================
 
 		#================ Distance =====================================================
@@ -369,19 +369,17 @@ class Model_v1(Model):
 								dims="source_id")
 		#=====================================================================================
 
-		#====================== Mass ============================================================
-		mass = pm.Uniform('mass',dims="source_id",
-							lower=mlp_phot.mass_domain[0],
-							upper=mlp_phot.mass_domain[1],
-							initval=np.full(shape=n_stars,fill_value=mlp_phot.mass_domain[0]+1e-3)
+		#====================== logL ============================================================
+		log_lum = pm.Uniform('log_lum',dims="source_id",
+							lower = mlp_phot.domain["logL"][0],
+							upper = mlp_phot.domain["logL"][1]
 							)
 		#=========================================================================================
 
 		#===================== Photometry =================================================
 		#--------------------- True value ---------------------------------------------------
-		# Convert absolute photometry to apparent magnitudes using per-source distance
 		photometry = pm.Deterministic('photometry',
-							var=absolute_to_apparent(mlp_phot(age, mass, n_stars),distance),
+							var=absolute_to_apparent(mlp_phot(log_age,log_lum,n_stars),distance),
 							dims=("source_id","photometry_names"))
 		#------------------------------------------------------------------------------------
 
@@ -393,22 +391,26 @@ class Model_v1(Model):
 
 			#-------------- Likelihood --------------------
 			obs_photometry = pm.StudentT('obs_photometry',
-				nu=pt.tile(nu,n_stars),
-				mu=photometry[photometry_ix], 
-				sigma=photometry_sd[photometry_ix],
-				observed=photometry_mu[photometry_ix])
+						nu=pt.tile(nu,n_stars),
+						mu=photometry[photometry_ix], 
+						sigma=photometry_sd[photometry_ix],
+						observed=photometry_mu[photometry_ix])
 			#-----------------------------------------------------
 		elif prior["outliers"]["family"] == "SkewNormal":
-			alpha = pm.Exponential("alpha",
-						scale=prior["outliers"]["scale"],
-						dims="photometry_names")
+			alpha = pm.Normal("alpha",
+						mu=0.0,
+						sigma=prior["outliers"]["scale"],
+						dims="photometry_names"
+						)
 
 			#-------------- Likelihood --------------------
 			obs_photometry = pm.SkewNormal('obs_photometry',
-				alpha=pt.tile(alpha,n_stars),
-				mu=photometry[photometry_ix], 
-				sigma=photometry_sd[photometry_ix],
-				observed=photometry_mu[photometry_ix])
+						alpha=pt.tile(alpha,n_stars),
+						mu=photometry[photometry_ix], 
+						sigma=photometry_sd[photometry_ix],
+						observed=photometry_mu[photometry_ix],
+						dims=("source_id","photometry_names")
+				)
 			#-----------------------------------------------------
 		else:
 			sys.exit("Unrecognized outliers family")
@@ -418,15 +420,15 @@ class Model_v1(Model):
 		if astrometry_mu is not None:
 			#------------ True value --------------------------------------------------
 			astrometry = pm.Deterministic("astrometry",
-								var=pytensor.tensor.reshape(1000./distance,(n_stars,1)),
-								dims=("source_id","astrometry_names"))
+						var=pytensor.tensor.reshape(1000./distance,(n_stars,1)),
+						dims=("source_id","astrometry_names"))
 			#---------------------------------------------------------------------------
 
 			#----------- Likelihood --------------------------
 			obs_astrometry = pm.Normal('obs_astrometry',
-				mu=astrometry[astrometry_ix], 
-				sigma=astrometry_sd[astrometry_ix], 
-				observed=astrometry_mu[astrometry_ix])
+						mu=astrometry[astrometry_ix], 
+						sigma=astrometry_sd[astrometry_ix], 
+						observed=astrometry_mu[astrometry_ix])
 			#----------------------------------------------------
 		#================================================================================
 
@@ -563,10 +565,9 @@ class Model_v2(Model):
 		#=====================================================================================
 
 		#====================== Mass ============================================================
-		mass = pm.Uniform('mass',dims="source_id",
-							lower=mlp_phot.mass_domain[0],
-							upper=mlp_phot.mass_domain[1],
-							initval=np.full(shape=n_stars,fill_value=mlp_phot.mass_domain[0]+1e-3)
+		log_lum = pm.Uniform('log_lum',dims="source_id",
+							lower=prior["log_lum"]["lower"],
+							upper=prior["log_lum"]["upper"],
 							)
 		#======================================================================================
 
@@ -594,7 +595,7 @@ class Model_v2(Model):
 		#--------------------- True value ---------------------------------------------------
 		# Convert absolute photometry to apparent magnitudes using per-source distance
 		photometry = pm.Deterministic('photometry',
-							var=absolute_to_apparent(mlp_phot(age, mass, n_stars),distance) +
+							var=absolute_to_apparent(mlp_phot(age,log_lum, n_stars),distance) +
 							ccm89_for_gaia(Av),
 							dims=("source_id","photometry_names"))
 		#------------------------------------------------------------------------------------
@@ -755,12 +756,10 @@ class Model_v3(Model):
 								dims="source_id")
 		#=====================================================================================
 
-		#====================== Mass ============================================================
-		mass = pm.Uniform('mass',
-							lower=mlp_phot.mass_domain[0],
-							upper=mlp_phot.mass_domain[1],
-							initval=np.full(shape=n_stars,fill_value=mlp_phot.mass_domain[0]+1e-3),
-							dims="source_id",
+		#====================== logL ============================================================
+		log_lum = pm.Uniform('log_lum',dims="source_id",
+							lower=prior["log_lum"]["lower"],
+							upper=prior["log_lum"]["upper"],
 							)
 		#======================================================================================
 
@@ -788,7 +787,7 @@ class Model_v3(Model):
 		#--------------------- True value ---------------------------------------------------
 		# Convert absolute photometry to apparent magnitudes using per-source distance
 		photometry = pm.Deterministic('photometry',
-							var=absolute_to_apparent(mlp_phot(age, mass, n_stars),distance) +
+							var=absolute_to_apparent(mlp_phot(age,log_lum, n_stars),distance) +
 							ccm89_for_gaia(Av),
 							dims=("source_id","photometry_names"))
 		#------------------------------------------------------------------------------------

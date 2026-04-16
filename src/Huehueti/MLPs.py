@@ -10,6 +10,7 @@ import os
 import sys
 from pickle import load
 import numpy as np
+import pytensor
 import pytensor.tensor as pt
 import pandas as pn
 
@@ -32,6 +33,8 @@ def Phot_band(X,W,b,mu,sd):
 	# A7  = sigmoid(pt.dot(A6, W[6]) + b[6])
 	# Final linear output (no activation)
 	out = pt.dot(A2,W[2]) + b[2]
+	# out = pt.dot(A3,W[3]) + b[3]
+	# out = pt.dot(A4,W[4]) + b[4]
 
 	return out.flatten()
 
@@ -41,7 +44,7 @@ class MLP_phot:
 
 	def __init__(self,
 		files_mlps: dict,
-		features = ["logAge","logL","logTe"],
+		features = ["logAge","Mini"],
 		targets = ["G_BPmag","Gmag","G_RPmag"],
 		):
 		"""Load the mlps for each photometric band
@@ -106,11 +109,12 @@ class MLP_phot:
 		self.mu_features = mu_features
 		self.sd_features = sd_features
 
-	def __call__(self, logAge, logL, logTe, n_stars):
+	def __call__(self, logAge, covariate, n_stars):
 		"""Compute NN predictions for given age and theta grid.
 		"""
 
-		x = pt.stack([pt.tile(logAge, (n_stars,)), logL, logTe],axis=1)
+		# x = pt.stack([pt.tile(logAge, (n_stars,)), covariate,logTe],axis=1)
+		x = pt.stack([pt.tile(logAge, (n_stars,)), covariate],axis=1)
 		# x = pt.stack([logAge, logL, logTe],axis=1)
 
 		A0 = (x - self.mu_features)/self.sd_features
@@ -132,17 +136,19 @@ class MLP_phot:
 # in interactive/script mode.
 if __name__ == "__main__":
 	import bisect
+	rng = np.random.default_rng(42)
 
-	dir_mlps = "/home/jolivares/Models/PARSEC/Gaia_EDR3/50-150Myr/Kroupa/"
+	dir_mlps = "/home/jolivares/Models/PARSEC/20-220Myr/"
+	case = "Optuna_logAge_logL_epochs_5e+02_0.1myr"
 
-	file_iso      = dir_mlps + "output_0.1myr.dat"
+	file_iso      = dir_mlps + "Gaia_EDR3_0.1myr.dat"
 	files_mlps = {
-	"G_BPmag":dir_mlps + "Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_1e+03/G_BPmag_l2_s17/seed_0/mlp.pkl",
-	"Gmag":   dir_mlps + "Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_1e+03/Gmag_l2_s10/seed_0/mlp.pkl",
-	"G_RPmag":dir_mlps + "Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_1e+03/G_RPmag_l2_s15/seed_0/mlp.pkl"
+	"G_BPmag":dir_mlps + case +"/G_BPmag_l2/seed_0/mlp.pkl",
+	"Gmag":   dir_mlps + case +"/Gmag_l2/seed_0/mlp.pkl",
+	"G_RPmag":dir_mlps + case +"/G_RPmag_l2/seed_0/mlp.pkl"
 	}
 	targets = ["G_BPmag","Gmag","G_RPmag"]
-	features = ["logAge","logL","logTe"]
+	features = ["logAge","logL"]
 
 	mlp_phot = MLP_phot(
 		features=features,
@@ -150,7 +156,10 @@ if __name__ == "__main__":
 		files_mlps=files_mlps)
 
 	# Example: load an isochrone from a parametrized CSV and overlay predicted photometry
-	logAge = 8.14613
+	
+	logAge = 7.77815 #60 Myr
+	# logAge = 8.0 #100Myr
+	# logAge = 8.14613 #140Myr
 	max_label = 1
 
 	df_iso = pn.read_csv(file_iso,
@@ -160,13 +169,15 @@ if __name__ == "__main__":
 					comment="#")
 	df_iso = df_iso.loc[df_iso["label"]<= max_label]
 	df_iso = df_iso.loc[:,sum([features,targets],[])]
-	# df_iso = df_iso.groupby("logAge").get_group(logAge)
+	df_iso = df_iso.groupby("logAge").get_group(logAge)
 	n_stars = df_iso.shape[0]
 
 	#------------ logL and logTe ------------------------------
 	# logAge = df_iso["logAge"].to_numpy()
-	logL = df_iso["logL"].to_numpy()
-	logTe = df_iso["logTe"].to_numpy()
+	logL  = df_iso["logL"].to_numpy()
+	
+	# Mini  = df_iso["Mini"].to_numpy()
+	# logTe = df_iso["logTe"].to_numpy()
 	# logL = np.linspace(
 	# 	start=mlp_phot.domain["logL"][0],
 	# 	stop=mlp_phot.domain["logL"][1],
@@ -175,14 +186,23 @@ if __name__ == "__main__":
 	# 	start=mlp_phot.domain["logTe"][0],
 	# 	stop=mlp_phot.domain["logTe"][1],
 	# 	num=n_stars)
+	print(logL.min(),logL.max())
+	# print(Mini.min(),Mini.max())
+	# print(logTe.min(),logTe.max())
 	#------------------------------------------------
 
-	phot = mlp_phot(logAge,logL,logTe,n_stars).eval()
+	phot = mlp_phot(
+		logAge=logAge,
+		covariate=logL,
+		# covariate=Mini,
+		# logTe=logTe,
+		n_stars=n_stars).eval()
 
 	df_prd = pn.DataFrame(data=phot,columns=mlp_phot.targets)
 	df_prd["logAge"] = logAge
 	df_prd["logL"]   = logL
-	df_prd["logTe"]  = logTe
+	# df_prd["Mini"]   = Mini
+	# df_prd["logTe"]  = logTe
 
 	df_prd.set_index(features,inplace=True)
 	df_iso.set_index(features,inplace=True)
@@ -223,16 +243,16 @@ if __name__ == "__main__":
 	for target in mlp_phot.targets:
 		plt.figure(0)
 		ax = sns.scatterplot(data=df_iso,
-							x="logL",y=target,
+							x=features[1],y=target,
 							legend=True,
 							zorder=0)
 		ax = sns.lineplot(data=df_prd,
-							x="logL",y=target,
+							x=features[1],y=target,
 							legend=True,
 							sort=False,
 							zorder=1,
 							ax=ax)
 
-		ax.set_xlabel("logL")
+		ax.set_xlabel(features[1])
 		ax.set_ylabel(target)
 		plt.show()

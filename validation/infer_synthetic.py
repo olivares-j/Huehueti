@@ -3,30 +3,32 @@ import os
 import time
 import dill
 
-os.environ['CUDA_VISIBLE_DEVICES'] = "-1"
+# os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 
 sys.path.append("/home/jolivares/Repos/Huehueti/src/Huehueti/")
 from Huehueti import Huehueti
 
 model = "base"
+case = "Optuna_logAge_logL_epochs_5e+02_0.1myr"
 
-dir_base = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/50-150Myr/{0}/".format(model)
-dir_mlps = "/home/jolivares/Models/PARSEC/Gaia_EDR3/50-150Myr/Kroupa/"
+dir_base = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/20-220Myr/{0}/".format(model)
+dir_mlps = "/home/jolivares/Models/PARSEC/20-220Myr/"
 
-list_of_ages      = list(range(60,160,20))
+list_of_ages      = list(range(20,240,20))
 list_of_distances = [50,100,200,400]
-list_of_n_stars   = [20]
+list_of_n_stars   = [30]
 list_of_seeds     = [0,1,2,3,4]
 
 dir_inputs  = dir_base + "inputs/"
-dir_outputs = dir_base + "Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_1e+03_l2_17_10_15/"
+dir_outputs = dir_base + case + "_l2_FullRankADVI/"
 base_name   = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 
 files_mlps = {
-	"G_BPmag":dir_mlps + "Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_1e+03/G_BPmag_l2_s17/seed_0/mlp.pkl",
-	"Gmag":   dir_mlps + "Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_1e+03/Gmag_l2_s10/seed_0/mlp.pkl",
-	"G_RPmag":dir_mlps + "Optuna_InverseTimeDecay_lrin_None_lrdr_None_bs_10000_epochs_1e+03/G_RPmag_l2_s15/seed_0/mlp.pkl"
+	"G_BPmag":dir_mlps + case + "/G_BPmag_l2/seed_0/mlp.pkl",
+	"Gmag":   dir_mlps + case + "/Gmag_l2/seed_0/mlp.pkl",
+	"G_RPmag":dir_mlps + case + "/G_RPmag_l2/seed_0/mlp.pkl"
 	}
+features = ["logAge","logL"]
 
 absolute_photometry = ['G_BPmag','Gmag','G_RPmag']
 observables = {
@@ -37,14 +39,13 @@ observables = {
 parameters = {"age":None}
 hyperparameters = {"distance":"distance"}
 
-chains ={
-	60:[1,2,3],
-	80:[1,2,3],
-	100:[0,1,2],
-	120:[1,2],
-	140:[1,2],
+chains = {
+	# 0:[0,1],
+	# 1:[2,0],
+	# 2:[0,1],
+	# 3:[0,2],
+	# 4:[0],
 }
-
 
 def set_prior(age,distance):
 	priors = {
@@ -55,10 +56,9 @@ def set_prior(age,distance):
 		},
 	'log_lum' : {
 		'family' : 'Uniform',
-			},
-	'log_tef' : {
-		'family' : 'Uniform',
-			},
+		# "lower_par":[-0.72855578,3.0677147 ],
+		# "upper_par":[-1.58449405,15.91599175]
+		},
 	'distance_mu' : {
 		'family' : 'Gaussian',
 		'mu' : float(distance),
@@ -76,9 +76,9 @@ def set_prior(age,distance):
 		"sigma" : 0.1,
 		},
 	"outliers":{
-		"family":"Exponential",
-		"scale":1.0,
-		"beta": 1/10.
+		"family":"StudentT",
+		"beta": 1/30.,
+		"scale":1.0
 		}
 	}
 	return priors
@@ -101,6 +101,8 @@ for seed in list_of_seeds:
 
 				if os.path.isfile(file_sts):
 					continue
+				# if not seed in chains.keys():
+				# 	continue
 					
 				os.makedirs(dir_out,exist_ok=True)
 
@@ -118,29 +120,29 @@ for seed in list_of_seeds:
 				hue.setup(
 					model=model,
 					parameters = parameters, 
-					prior = set_prior(age,distance)
+					prior = set_prior(age,distance),
+					features=features
 					)
 				hue.run(
 					target_accept=0.85,
-					init_method="advi",
-					init_iters=int(3e5),
-					nuts_sampler="numpyro",
+					init_method="fullrank_advi",
+					init_iters=int(5e5),
+					nuts_sampler="fullrank_advi",
+					# nuts_sampler="numpyro",
 					tuning_iters=int(2e3),
 					sample_iters=int(2e3),
 					prior_iters=int(2e3),
-					chains=3
+					chains=2
 					)
-				hue.load_trace()#chains=chains[age])
+				hue.load_trace()#chains=chains[seed])
 				hue.convergence()
 				hue.plot_chains()
 				hue.plot_posterior()
 				hue.plot_cpp()
 				hue.plot_predictions()
-				hue.plot_cmd(
-					cmd={
+				hue.plot_cmd(cmd={
 						"magnitude":"G",
-						"color":["G","RP"]
-						})
+						"color":["G","RP"]})
 				hue.save_statistics()
 				end_time = time.time()
 

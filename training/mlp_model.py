@@ -12,67 +12,14 @@ tf.random.set_seed(SEED)
 
 print(f"Running Tensoflow {tf.__version__}")
 
-def compute_gradients(model,x,y):
-	grd, vrb, loss_val = evaluate_gradients(
-							model=model,
-							x=x,
-							y=y
-							)
+def evaluate_gradient(model,x):
+	x = tf.convert_to_tensor(x)
 
-	print("-------------- Gradients --------------------")
-	for g, v in zip(grd, vrb):
-		print(v.name, tf.norm(g).numpy())
-	print("---------------------------------------------")
-
-	norms = [tf.norm(g).numpy() if g is not None else 0 for g in grd]
-	names = [v.name for v in vrb]
-
-	return names,norms
-
-def evaluate_gradients(model, x, y, loss_fn=None):
-    """
-    Evaluate gradients of the loss with respect to model trainable variables.
-
-    Parameters
-    ----------
-    model : tf.keras.Model
-        A trained Keras model.
-    x : np.array or tf.Tensor
-        Input data.
-    y : np.array or tf.Tensor
-        Target labels.
-    loss_fn : callable, optional
-        Loss function. If None, model.compiled_loss is used.
-
-    Returns
-    -------
-    grads : list of tf.Tensor
-        Gradients for each trainable variable.
-    vars : list of tf.Variable
-        Corresponding model variables.
-    loss_value : tf.Tensor
-        Computed loss for the batch.
-    """
-
-    if loss_fn is None:
-        loss_fn = model.compiled_loss
-
-    x = tf.convert_to_tensor(x)
-    y = tf.convert_to_tensor(y)
-
-    with tf.GradientTape() as tape:
-        preds = model(x, training=False)
-
-        if loss_fn == model.compiled_loss:
-            loss_value = loss_fn(y, preds)
-        else:
-            loss_value = loss_fn(y, preds)
-
-    variables = model.trainable_variables
-    grads = tape.gradient(loss_value, variables)
-
-    return grads, variables, loss_value
-
+	with tf.GradientTape() as tape:
+		tape.watch(x)
+		y = model(x, training=False)
+	grads = tape.gradient(y,x)
+	return grads
 
 # Defining model archiquetures
 # ----------------------------
@@ -99,6 +46,12 @@ def create_custom_model(
 	Returns:
 	- model (Sequential): The compiled Keras Sequential model.
 	"""
+	if activation_layers == "sigmoid":
+		initializer = keras.initializers.GlorotUniform(seed=seed)
+	elif activation_layers == "relu":
+		initializer = keras.initializers.HeUniform(seed=seed)
+	else:
+		sys.exit("activation_layers not recognized!")
 
 	model = Sequential()
 	model.add(keras.Input(shape=(input_shape,)))
@@ -109,8 +62,8 @@ def create_custom_model(
 			Dense(
 				size_layers,
 				activation=activation_layers,
-				kernel_initializer=keras.initializers.GlorotUniform(seed=seed),
-				bias_initializer=keras.initializers.GlorotUniform(seed=seed),
+				kernel_initializer=initializer,
+				bias_initializer=initializer,
 				# kernel_regularizer=keras.regularizers.l2(lambda_rgl),
 				# bias_regularizer=keras.regularizers.l2(lambda_rgl)
 			)
@@ -121,8 +74,8 @@ def create_custom_model(
 		Dense(
 			output_shape,
 			activation=activation_output,
-			kernel_initializer=keras.initializers.GlorotUniform(seed=seed),
-			bias_initializer=keras.initializers.GlorotUniform(seed=seed),
+			kernel_initializer=initializer,
+			bias_initializer=initializer,
 			# kernel_regularizer=keras.regularizers.l2(lambda_rgl),
 			# bias_regularizer=keras.regularizers.l2(lambda_rgl)
 		)

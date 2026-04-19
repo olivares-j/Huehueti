@@ -13,16 +13,6 @@ import pytensor
 import pytensor.tensor as pt
 from pymc import Model
 
-def linear(x,a,b):
-	return a*x + b
-
-# print("lower",linear(8.14613,*[-0.72855578,3.0677147 ]),-2.865)
-# print("upper",linear(8.14613,*[-1.58449405,15.91599175]),3.007)
-# print("lower",linear(7.77815,*[-0.72855578,3.0677147 ]),-2.595)
-# print("upper",linear(7.77815,*[-1.58449405,15.91599175]),3.58)
-# sys.exit()
-
-
 def absolute_to_apparent(M, distance):
     """Convert absolute magnitude to relative magnitude.
     m = 
@@ -58,12 +48,12 @@ def ccm89_for_gaia(Av):
 	# a = np.array([0.94036655, 1.01577189, 0.80497438])
 	# b = np.array([-0.21954552,  0.28589221, -0.51975359])
 	# abrv = np.array([0.86954541, 1.10799518, 0.63731193])
-	abrv = pytensor.shared(np.array([0.86954541, 1.10799518, 0.63731193]))
+	abrv = pytensor.shared(np.array([ 1.10799518,0.86954541, 0.63731193]))
 	result = pt.outer(Av, abrv)
 	
 	return result
 
-class Model_v0(Model):
+class Model_base(Model):
 	"""
 	Baseline model for photometry and parallax.
 
@@ -158,49 +148,32 @@ class Model_v0(Model):
 			# distance_sd controls the per-source scatter around central distance
 			if prior["distance_sd"]["family"] == 'Exponential':
 				distance_sd = pm.Exponential('distance_sd',
-										scale=prior["distance_sd"]["scale"])
+						scale=prior["distance_sd"]["scale"])
 			elif prior["distance_sd"]["family"] == 'Gamma':
 				distance_sd = pm.Gamma('distance_sd',
-										alpha=2.0,
-										beta=prior["distance_sd"]["beta"])
+						alpha=2.0,
+						beta=prior["distance_sd"]["beta"])
 			else:
 				raise KeyError('Unknown distance_sd distribution')
 			#---------------------------------------------------------------------
 			
 			#------------- Distances -------------------------------
 			distance = pm.Normal("distance",
-								mu=distance_mu,
-								sigma=distance_sd,
-								dims="source_id")
+						mu=distance_mu,
+						sigma=distance_sd,
+						dims="source_id")
 			#----------------------------------------------------------------
 		else:
 			distance = pm.Deterministic("distance",
-								pytensor.shared(parameters["distance"]),
-								dims="source_id")
+						pytensor.shared(parameters["distance"]),
+						dims="source_id")
 		#=====================================================================================
 
 		#====================== logL =============================
 		log_lum = pm.Uniform('log_lum',dims="source_id",
-							# lower=linear(log_age,*prior["log_lum"]["lower_par"]),
-							# upper=linear(log_age,*prior["log_lum"]["upper_par"]),
-							# lower=prior["log_lum"]["lower"],
-							# upper=prior["log_lum"]["upper"],
-							lower = mlp_phot.domain["logL"][0],
-							upper = mlp_phot.domain["logL"][1]
-							)
-		# theta = pm.Uniform("theta",dims="source_id",
-		# 					lower=0.0,
-		# 					upper=1.0
-		# 					)
-		# lower_lum = linear(log_age,*prior["log_lum"]["lower_par"])
-		# upper_lum = linear(log_age,*prior["log_lum"]["upper_par"])
-		# lower_lum = prior["log_lum"]["lower"]
-		# upper_lum = prior["log_lum"]["upper"]
-		# lower_lum = mlp_phot.domain["logL"][0]
-		# upper_lum = mlp_phot.domain["logL"][1]
-		# log_lum = pm.Deterministic('log_lum',dims="source_id",
-		# 					var=lower_lum + (upper_lum-lower_lum)*theta
-		# 					)
+						lower = mlp_phot.domain["logL"][0],
+						upper = mlp_phot.domain["logL"][1]
+						)
 		#===================================================================
 
 		#===================== Photometry =================================================		
@@ -208,31 +181,31 @@ class Model_v0(Model):
 		# Convert absolute photometry to apparent magnitudes using per-source distance
 		
 		photometry = pm.Deterministic('photometry',dims=("source_id","photometry_names"),
-							var=absolute_to_apparent(mlp_phot(log_age,log_lum,n_stars),distance),
-							)
+						var=absolute_to_apparent(mlp_phot(log_age,log_lum,n_stars),distance),
+						)
 		#------------------------------------------------------------------------------------
 
 		#-------------- Likelihood --------------------
 		obs_photometry = pm.Normal('obs_photometry', 
-			mu=photometry[photometry_ix], 
-			sigma=photometry_sd[photometry_ix],
-			observed=photometry_mu[photometry_ix])
-		#-----------------------------------------------------
+						mu=photometry[photometry_ix], 
+						sigma=photometry_sd[photometry_ix],
+						observed=photometry_mu[photometry_ix])
+		#---------------------------------------------
 		#======================================================================================
 
 		#===================== Astrometry ===============================================
 		if astrometry_mu is not None:
 			#------------ True value --------------------------------------------------
 			astrometry = pm.Deterministic("astrometry",
-								var=pytensor.tensor.reshape(1000./distance,(n_stars,1)),
-								dims=("source_id","astrometry_names"))
+						var=pytensor.tensor.reshape(1000./distance,(n_stars,1)),
+						dims=("source_id","astrometry_names"))
 			#---------------------------------------------------------------------------
 
 			#----------- Likelihood --------------------------
 			obs_astrometry = pm.Normal('obs_astrometry',
-				mu=astrometry[astrometry_ix], 
-				sigma=astrometry_sd[astrometry_ix], 
-				observed=astrometry_mu[astrometry_ix])
+						mu=astrometry[astrometry_ix], 
+						sigma=astrometry_sd[astrometry_ix], 
+						observed=astrometry_mu[astrometry_ix])
 			#----------------------------------------------------
 		#================================================================================
 
@@ -240,20 +213,20 @@ class Model_v0(Model):
 		if spectroscopy_mu is not None:
 			#---------------- True values -----------------------------------
 			spectroscopy = pm.Deterministic('spectroscopy',
-								var=pytensor.tensor.reshape(tef,(n_stars,1)),
-								dims=("source_id","spectroscopy_names"))
+						var=pytensor.tensor.reshape(tef,(n_stars,1)),
+						dims=("source_id","spectroscopy_names"))
 			#----------------------------------------------------------------
 
 			#-------------- Likelihood ---------------------
 			obs_spectroscopy = pm.Normal('obs_spectroscopy', 
-				mu=spectroscopy[spectroscopy_ix], 
-				sigma=spectroscopy_sd[spectroscopy_ix],
-				observed=spectroscopy_mu[spectroscopy_ix])
+						mu=spectroscopy[spectroscopy_ix], 
+						sigma=spectroscopy_sd[spectroscopy_ix],
+						observed=spectroscopy_mu[spectroscopy_ix])
 			#-----------------------------------------------
 		#=================================================================================
 
 
-class Model_v1(Model):
+class Model_outliers(Model):
 	"""
 	Model for outliers treated with Student-T
 
@@ -348,39 +321,39 @@ class Model_v1(Model):
 			# distance_sd controls the per-source scatter around central distance
 			if prior["distance_sd"]["family"] == 'Exponential':
 				distance_sd = pm.Exponential('distance_sd',
-										scale=prior["distance_sd"]["scale"])
+						scale=prior["distance_sd"]["scale"])
 			elif prior["distance_sd"]["family"] == 'Gamma':
 				distance_sd = pm.Gamma('distance_sd',
-										alpha=2.0,
-										beta=prior["distance_sd"]["beta"])
+						alpha=2.0,
+						beta=prior["distance_sd"]["beta"])
 			else:
 				raise KeyError('Unknown distance_sd distribution')
 			#---------------------------------------------------------------------
 			
 			#------------- Distances -------------------------------
 			distance = pm.Normal("distance",
-								mu=distance_mu,
-								sigma=distance_sd,
-								dims="source_id")
+						mu=distance_mu,
+						sigma=distance_sd,
+						dims="source_id")
 			#----------------------------------------------------------------
 		else:
 			distance = pm.Deterministic("distance",
-								pytensor.shared(parameters["distance"]),
-								dims="source_id")
+						pytensor.shared(parameters["distance"]),
+						dims="source_id")
 		#=====================================================================================
 
-		#====================== logL ============================================================
+		#====================== logL ==============================
 		log_lum = pm.Uniform('log_lum',dims="source_id",
-							lower = mlp_phot.domain["logL"][0],
-							upper = mlp_phot.domain["logL"][1]
-							)
-		#=========================================================================================
+						lower = mlp_phot.domain["logL"][0],
+						upper = mlp_phot.domain["logL"][1]
+						)
+		#==========================================================
 
 		#===================== Photometry =================================================
 		#--------------------- True value ---------------------------------------------------
 		photometry = pm.Deterministic('photometry',
-							var=absolute_to_apparent(mlp_phot(log_age,log_lum,n_stars),distance),
-							dims=("source_id","photometry_names"))
+						var=absolute_to_apparent(mlp_phot(log_age,log_lum,n_stars),distance),
+						dims=("source_id","photometry_names"))
 		#------------------------------------------------------------------------------------
 
 		if prior["outliers"]["family"] == "StudentT":
@@ -436,20 +409,20 @@ class Model_v1(Model):
 		if spectroscopy_mu is not None:
 			#---------------- True values -----------------------------------
 			spectroscopy = pm.Deterministic('spectroscopy',
-								var=mlp_teff(age, mass, n_stars),
-								dims=("source_id","spectroscopy_names"))
+						var=mlp_teff(age, mass, n_stars),
+						dims=("source_id","spectroscopy_names"))
 			#----------------------------------------------------------------
 
 			#-------------- Likelihood ---------------------
 			obs_spectroscopy = pm.Normal('obs_spectroscopy',
-				mu=spectroscopy[spectroscopy_ix], 
-				sigma=spectroscopy_sd[spectroscopy_ix],
-				observed=spectroscopy_mu[spectroscopy_ix])
+						mu=spectroscopy[spectroscopy_ix], 
+						sigma=spectroscopy_sd[spectroscopy_ix],
+						observed=spectroscopy_mu[spectroscopy_ix])
 			#-----------------------------------------------
 		#=================================================================================
 
 
-class Model_v2(Model):
+class Model_base_extinction(Model):
 	"""
 	Model with extinction.
 
@@ -462,7 +435,6 @@ class Model_v2(Model):
 	
 	def __init__(self,
 		mlp_phot,
-		mlp_teff,
 		parameters : dict,
 		prior : dict,
 		identifiers : np.ndarray,
@@ -507,20 +479,22 @@ class Model_v2(Model):
 		if parameters["age"] is None:
 			# Age prior can be either TruncatedNormal or Uniform as provided by caller.
 			if prior["age"]["family"] == 'TruncatedNormal':
-				age = pm.TruncatedNormal('age',
-						mu = prior['age']['mu'],
-						sigma = prior['age']['sigma'],
-						lower = prior['age']['lower'],
-						upper = prior['age']['upper'],
+				age = pm.TruncatedNormal("age",
+						mu = prior["age"]['mu'],
+						sigma = prior["age"]['sigma'],
+						lower=np.pow(10,mlp_phot.domain["logAge"][0])/np.pow(10,6),
+						upper=np.pow(10,mlp_phot.domain["logAge"][1])/np.pow(10,6),
 						)
 			elif prior["age"]["family"] == 'Uniform':
-				age = pm.Uniform('age', 
-						lower = prior['age']['lower'],
-						upper = prior['age']['upper'],)
+				age = pm.Uniform("age", 
+						lower=np.pow(10,mlp_phot.domain["logAge"][0])/np.pow(10,6),
+						upper=np.pow(10,mlp_phot.domain["logAge"][1])/np.pow(10,6),)
 			else: 
-				raise KeyError('Unknown age prior distribution')
+				raise KeyError('Unknown logAge prior distribution')
 		else:
 			age = pm.Deterministic("age",pytensor.shared(parameters["age"]))
+
+		log_age = pt.log10(age*1.e6)
 		#===============================================================================
 
 		#================ Distance =====================================================
@@ -543,36 +517,36 @@ class Model_v2(Model):
 			# distance_sd controls the per-source scatter around central distance
 			if prior["distance_sd"]["family"] == 'Exponential':
 				distance_sd = pm.Exponential('distance_sd',
-										scale=prior["distance_sd"]["scale"])
+						scale=prior["distance_sd"]["scale"])
 			elif prior["distance_sd"]["family"] == 'Gamma':
 				distance_sd = pm.Gamma('distance_sd',
-										alpha=2.0,
-										beta=prior["distance_sd"]["beta"])
+						alpha=2.0,
+						beta=prior["distance_sd"]["beta"])
 			else:
 				raise KeyError('Unknown distance_sd distribution')
 			#---------------------------------------------------------------------
 			
 			#------------- Distances -------------------------------
 			distance = pm.Normal("distance",
-								mu=distance_mu,
-								sigma=distance_sd,
-								dims="source_id")
+						mu=distance_mu,
+						sigma=distance_sd,
+						dims="source_id")
 			#----------------------------------------------------------------
 		else:
 			distance = pm.Deterministic("distance",
-								pytensor.shared(parameters["distance"]),
-								dims="source_id")
+						pytensor.shared(parameters["distance"]),
+						dims="source_id")
 		#=====================================================================================
 
-		#====================== Mass ============================================================
+		#====================== logL ============================================================
 		log_lum = pm.Uniform('log_lum',dims="source_id",
-							lower=prior["log_lum"]["lower"],
-							upper=prior["log_lum"]["upper"],
-							)
-		#======================================================================================
+						lower = mlp_phot.domain["logL"][0],
+						upper = mlp_phot.domain["logL"][1]
+						)
+		#=========================================================================================
 
-		#===================== Photometry =================================================
-		#------------------- Extinction prior ------------------------------------
+		#==================== Extinction ============================
+		#------------------- Prior -----------------------------
 		if prior["extinction"]["family"] == "Uniform":
 			Av = pm.Uniform("Av",
 						lower=prior["extinction"]["lower"],
@@ -591,20 +565,22 @@ class Model_v2(Model):
 						dims="source_id")
 		else:
 			sys.exit("Unsupported extinction family")
+		#===========================================================
 		
+		#===================== Photometry =====================================================
 		#--------------------- True value ---------------------------------------------------
 		# Convert absolute photometry to apparent magnitudes using per-source distance
 		photometry = pm.Deterministic('photometry',
-							var=absolute_to_apparent(mlp_phot(age,log_lum, n_stars),distance) +
-							ccm89_for_gaia(Av),
-							dims=("source_id","photometry_names"))
+						var=absolute_to_apparent(mlp_phot(age,log_lum, n_stars),distance) +
+						ccm89_for_gaia(Av),
+						dims=("source_id","photometry_names"))
 		#------------------------------------------------------------------------------------
 
 		#-------------- Likelihood --------------------
 		obs_photometry = pm.Normal('obs_photometry', 
-			mu=photometry[photometry_ix], 
-			sigma=photometry_sd[photometry_ix],
-			observed=photometry_mu[photometry_ix])
+						mu=photometry[photometry_ix], 
+						sigma=photometry_sd[photometry_ix],
+						observed=photometry_mu[photometry_ix])
 		#----------------------------------------------
 		#======================================================================================
 
@@ -612,15 +588,15 @@ class Model_v2(Model):
 		if astrometry_mu is not None:
 			#------------ True value --------------------------------------------------
 			astrometry = pm.Deterministic("astrometry",
-								var=pytensor.tensor.reshape(1000./distance,(n_stars,1)),
-								dims=("source_id","astrometry_names"))
+						var=pytensor.tensor.reshape(1000./distance,(n_stars,1)),
+						dims=("source_id","astrometry_names"))
 			#---------------------------------------------------------------------------
 
 			#----------- Likelihood --------------------------
 			obs_astrometry = pm.Normal('obs_astrometry',
-				mu=astrometry[astrometry_ix], 
-				sigma=astrometry_sd[astrometry_ix], 
-				observed=astrometry_mu[astrometry_ix])
+						mu=astrometry[astrometry_ix], 
+						sigma=astrometry_sd[astrometry_ix], 
+						observed=astrometry_mu[astrometry_ix])
 			#----------------------------------------------------
 		#================================================================================
 
@@ -628,20 +604,20 @@ class Model_v2(Model):
 		if spectroscopy_mu is not None:
 			#---------------- True values -----------------------------------
 			spectroscopy = pm.Deterministic('spectroscopy',
-								var=mlp_teff(age, mass, n_stars),
-								dims=("source_id","spectroscopy_names"))
+						var=mlp_teff(age, mass, n_stars),
+						dims=("source_id","spectroscopy_names"))
 			#----------------------------------------------------------------
 
 			#-------------- Likelihood ---------------------
 			obs_spectroscopy = pm.Normal('obs_spectroscopy', 
-				mu=spectroscopy[spectroscopy_ix], 
-				sigma=spectroscopy_sd[spectroscopy_ix],
-				observed=spectroscopy_mu[spectroscopy_ix])
+						mu=spectroscopy[spectroscopy_ix], 
+						sigma=spectroscopy_sd[spectroscopy_ix],
+						observed=spectroscopy_mu[spectroscopy_ix])
 			#-----------------------------------------------
 		#=================================================================================
 
 
-class Model_v3(Model):
+class Model_outliers_extinction(Model):
 	"""
 	Model with extinction and outliers.
 
@@ -654,7 +630,6 @@ class Model_v3(Model):
 	
 	def __init__(self,
 		mlp_phot,
-		mlp_teff,
 		parameters : dict,
 		prior : dict,
 		identifiers : np.ndarray,
@@ -699,20 +674,22 @@ class Model_v3(Model):
 		if parameters["age"] is None:
 			# Age prior can be either TruncatedNormal or Uniform as provided by caller.
 			if prior["age"]["family"] == 'TruncatedNormal':
-				age = pm.TruncatedNormal('age',
-						mu = prior['age']['mu'],
-						sigma = prior['age']['sigma'],
-						lower = prior['age']['lower'],
-						upper = prior['age']['upper'],
+				age = pm.TruncatedNormal("age",
+						mu = prior["age"]['mu'],
+						sigma = prior["age"]['sigma'],
+						lower=np.pow(10,mlp_phot.domain["logAge"][0])/np.pow(10,6),
+						upper=np.pow(10,mlp_phot.domain["logAge"][1])/np.pow(10,6),
 						)
 			elif prior["age"]["family"] == 'Uniform':
-				age = pm.Uniform('age', 
-						lower = prior['age']['lower'],
-						upper = prior['age']['upper'],)
+				age = pm.Uniform("age", 
+						lower=np.pow(10,mlp_phot.domain["logAge"][0])/np.pow(10,6),
+						upper=np.pow(10,mlp_phot.domain["logAge"][1])/np.pow(10,6),)
 			else: 
-				raise KeyError('Unknown age prior distribution')
+				raise KeyError('Unknown logAge prior distribution')
 		else:
 			age = pm.Deterministic("age",pytensor.shared(parameters["age"]))
+
+		log_age = pt.log10(age*1.e6)
 		#===============================================================================
 
 		#================ Distance =====================================================
@@ -735,36 +712,36 @@ class Model_v3(Model):
 			# distance_sd controls the per-source scatter around central distance
 			if prior["distance_sd"]["family"] == 'Exponential':
 				distance_sd = pm.Exponential('distance_sd',
-										scale=prior["distance_sd"]["scale"])
+						scale=prior["distance_sd"]["scale"])
 			elif prior["distance_sd"]["family"] == 'Gamma':
 				distance_sd = pm.Gamma('distance_sd',
-										alpha=2.0,
-										beta=prior["distance_sd"]["beta"])
+						alpha=2.0,
+						beta=prior["distance_sd"]["beta"])
 			else:
 				raise KeyError('Unknown distance_sd distribution')
 			#---------------------------------------------------------------------
 			
 			#------------- Distances -------------------------------
 			distance = pm.Normal("distance",
-								mu=distance_mu,
-								sigma=distance_sd,
-								dims="source_id")
+						mu=distance_mu,
+						sigma=distance_sd,
+						dims="source_id")
 			#----------------------------------------------------------------
 		else:
 			distance = pm.Deterministic("distance",
-								pytensor.shared(parameters["distance"]),
-								dims="source_id")
+						var=pytensor.shared(parameters["distance"]),
+						dims="source_id")
 		#=====================================================================================
 
 		#====================== logL ============================================================
 		log_lum = pm.Uniform('log_lum',dims="source_id",
-							lower=prior["log_lum"]["lower"],
-							upper=prior["log_lum"]["upper"],
-							)
-		#======================================================================================
+						lower = mlp_phot.domain["logL"][0],
+						upper = mlp_phot.domain["logL"][1]
+						)
+		#=========================================================================================
 
-		#===================== Photometry =================================================
-		#------------------- Extinction prior ------------------------------------
+		#==================== Extinction ============================
+		#------------------- Prior -----------------------------
 		if prior["extinction"]["family"] == "Uniform":
 			Av = pm.Uniform("Av",
 						lower=prior["extinction"]["lower"],
@@ -783,13 +760,15 @@ class Model_v3(Model):
 						dims="source_id")
 		else:
 			sys.exit("Unsupported extinction family")
+		#===========================================================
 		
+		#===================== Photometry =====================================================
 		#--------------------- True value ---------------------------------------------------
 		# Convert absolute photometry to apparent magnitudes using per-source distance
 		photometry = pm.Deterministic('photometry',
-							var=absolute_to_apparent(mlp_phot(age,log_lum, n_stars),distance) +
-							ccm89_for_gaia(Av),
-							dims=("source_id","photometry_names"))
+						var=absolute_to_apparent(mlp_phot(age,log_lum, n_stars),distance) +
+						ccm89_for_gaia(Av),
+						dims=("source_id","photometry_names"))
 		#------------------------------------------------------------------------------------
 
 		if prior["outliers"]["family"] == "StudentT":
@@ -800,10 +779,10 @@ class Model_v3(Model):
 
 			#-------------- Likelihood --------------------
 			obs_photometry = pm.StudentT('obs_photometry',
-				nu=pt.tile(nu,n_stars),
-				mu=photometry[photometry_ix], 
-				sigma=photometry_sd[photometry_ix],
-				observed=photometry_mu[photometry_ix])
+						nu=pt.tile(nu,n_stars),
+						mu=photometry[photometry_ix], 
+						sigma=photometry_sd[photometry_ix],
+						observed=photometry_mu[photometry_ix])
 			#-----------------------------------------------------
 		elif prior["outliers"]["family"] == "SkewNormal":
 			alpha = pm.Exponential("alpha",
@@ -812,10 +791,10 @@ class Model_v3(Model):
 
 			#-------------- Likelihood --------------------
 			obs_photometry = pm.SkewNormal('obs_photometry',
-				alpha=pt.tile(alpha,n_stars),
-				mu=photometry[photometry_ix], 
-				sigma=photometry_sd[photometry_ix],
-				observed=photometry_mu[photometry_ix])
+						alpha=pt.tile(alpha,n_stars),
+						mu=photometry[photometry_ix], 
+						sigma=photometry_sd[photometry_ix],
+						observed=photometry_mu[photometry_ix])
 			#-----------------------------------------------------
 		else:
 			sys.exit("Unrecognized outliers family")
@@ -825,15 +804,15 @@ class Model_v3(Model):
 		if astrometry_mu is not None:
 			#------------ True value --------------------------------------------------
 			astrometry = pm.Deterministic("astrometry",
-								var=pytensor.tensor.reshape(1000./distance,(n_stars,1)),
-								dims=("source_id","astrometry_names"))
+						var=pytensor.tensor.reshape(1000./distance,(n_stars,1)),
+						dims=("source_id","astrometry_names"))
 			#---------------------------------------------------------------------------
 
 			#----------- Likelihood --------------------------
 			obs_astrometry = pm.Normal('obs_astrometry',
-				mu=astrometry[astrometry_ix], 
-				sigma=astrometry_sd[astrometry_ix], 
-				observed=astrometry_mu[astrometry_ix])
+						mu=astrometry[astrometry_ix], 
+						sigma=astrometry_sd[astrometry_ix], 
+						observed=astrometry_mu[astrometry_ix])
 			#----------------------------------------------------
 		#================================================================================
 
@@ -841,14 +820,14 @@ class Model_v3(Model):
 		if spectroscopy_mu is not None:
 			#---------------- True values -----------------------------------
 			spectroscopy = pm.Deterministic('spectroscopy',
-								var=mlp_teff(age, mass, n_stars),
-								dims=("source_id","spectroscopy_names"))
+						var=mlp_teff(age, mass, n_stars),
+						dims=("source_id","spectroscopy_names"))
 			#----------------------------------------------------------------
 
 			#-------------- Likelihood ---------------------
 			obs_spectroscopy = pm.Normal('obs_spectroscopy',
-				mu=spectroscopy[spectroscopy_ix], 
-				sigma=spectroscopy_sd[spectroscopy_ix],
-				observed=spectroscopy_mu[spectroscopy_ix])
+						mu=spectroscopy[spectroscopy_ix], 
+						sigma=spectroscopy_sd[spectroscopy_ix],
+						observed=spectroscopy_mu[spectroscopy_ix])
 			#-----------------------------------------------
 		#=================================================================================

@@ -27,42 +27,48 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.ticker import FormatStrFormatter 
 import seaborn as sns
 
-pn.set_option('display.max_rows', None) 
+age_range = "20-220Myr"
+# age_range = "15-25Myr"
 
-# base_dir = "Optuna_logAge_logL_epochs_5e+02_0.1myr_l3/"
-# base_dir = "Optuna_logAge_Mini_epochs_5e+02_0.1myr_l2/"
-# base_dir = "Optuna_logAge_Mini_logTe_epochs_5e+02_0.1myr_l2_FullRankADVI/"
-# base_dir = "Optuna_logAge_logL_epochs_5e+02_0.1myr_l2_FullRankADVI/"
-base_dir = "Optuna_logAge_logL_epochs_5e+02_0.1myr_l2_FullRankADVI/"
+# experiment = "Optuna_logAge_logL_epochs_5e+02_0.1myr_l3"
+# experiment = "Optuna_logAge_Mini_epochs_5e+02_0.1myr_l2"
+# experiment = "Optuna_logAge_Mini_logTe_epochs_5e+02_0.1myr_l2_FullRankADVI"
+# experiment = "Optuna_logAge_logL_epochs_5e+02_0.1myr_l2_FullRankADVI"
+# experiment = "Optuna_logAge_logL_epochs_5e+02_0.1myr_l3_FullRankADVI"
+experiment = case = "Optuna_InverseTimeDecay_logAge_logL_epochs_5e+02_trials_100_0.1myr_l2_FullRankADVI"
 
-dir_base = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/20-220Myr/"
-dir_fig  = "/home/jolivares/Dropbox/MisArticulos/BayesianAges/Isochrones/Method/Figures/20-220Myr/"
-dir_fig += base_dir
+
+dir_base = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/{0}/".format(age_range)
+dir_fig  = "/home/jolivares/Dropbox/MisArticulos/BayesianAges/Isochrones/Method/Figures/{0}/".format(age_range)
+dir_fig += experiment
 os.makedirs(dir_fig,exist_ok=True)
-
 
 models = ["base","outliers"]
 
-list_of_ages      = list(range(20,240,20))
+if age_range == "15-25Myr":
+	list_of_ages = list(range(15,27,2))
+elif age_range == "20-220Myr":
+	list_of_ages = list(range(20,240,20))
+elif age_range == "200-600Myr":
+	list_of_ages = list(range(200,650,50))
+else:
+	sys.exit("Undefined age range")
+	
 list_of_distances = [50,100,200,400]
-list_of_n_stars   = [15]
+list_of_n_stars   = [15,30]
 list_of_seeds     = [0,1,2,3,4]
 
 do_process = True
 do_plt_grp = True
 do_plt_src = True
 
-file_data_all = dir_base + "data_models.h5"
-file_plt_grp  = dir_fig + "group-level.pdf"
-file_plt_src  = dir_fig + "source-level.pdf"
+file_data     = dir_base + experiment + ".h5"
+file_plt_grp  = dir_fig  + "/group-level_{0}.png"
+file_plt_src  = dir_fig  + "/source-level_{0}.png"
 
-
-base_dir_out = "{0}{1}/"+base_dir
-base_dir_in  = "{0}{1}/inputs/"
-base_obs_grp = "{0}/{1}/Global_statistics.csv"
-base_obs_src = "{0}/{1}/Sources_statistics.csv"
-base_syn_src = "{0}/{1}.csv"
-base_dat     = "{0}{1}/data.h5"
+base_obs_grp = "{0}/{1}/"+experiment+"/{2}/Global_statistics.csv"
+base_obs_src = "{0}/{1}/"+experiment+"/{2}/Sources_statistics.csv"
+base_syn_src = "{0}/{1}/inputs/{2}.csv"
 base_name    = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 #---------------------------------------------------------------------------
 
@@ -79,9 +85,9 @@ sts_grp = [
 		{"key":"err",     "name":"Error [%]",       "ylim":[-20,20]},
 		{"key":"unc",     "name":"Uncertainty [%]", "ylim":[0,5]   },
 		{"key":"crd",     "name":"Credibility [%]", "ylim":[0,100]   },
-		{"key":"r_hat",   "name":"$\\hat{R}$",      "ylim":[0.9,1.5]     },
-		{"key":"ess_bulk","name":"ESS bulk",        "ylim":[0,None]     },
-		{"key":"ess_tail","name":"ESS tail",        "ylim":[0,None]     },
+		# {"key":"r_hat",   "name":"$\\hat{R}$",      "ylim":[0.9,1.5]     },
+		# {"key":"ess_bulk","name":"ESS bulk",        "ylim":[0,None]     },
+		# {"key":"ess_tail","name":"ESS tail",        "ylim":[0,None]     },
 		]
 sts_src = [
 		{"key":"err", "name":"Error [%]"      ,"ylim":[-3,10]},
@@ -94,15 +100,10 @@ sts_src = [
 
 
 if do_process:
-	dfss_grp = []
-	dfss_src = []
+	dfs_grp = []
+	dfs_src = []
 	for model in models:
 		print(40*"+" +" " + model + " " +40*"+")
-		dir_out   = base_dir_out.format(dir_base,model)
-		dir_in    = base_dir_in.format(dir_base,model)
-		file_data = base_dat.format(dir_base,model)
-		dfs_grp = []
-		dfs_src = []
 		for age in list_of_ages:
 			for distance in list_of_distances:
 				for n_stars in list_of_n_stars:
@@ -111,34 +112,38 @@ if do_process:
 						print(40*"-" +" " + name + " " +40*"-")
 
 						#------------- Files ---------------------------------
-						file_obs_grp   = base_obs_grp.format(dir_out,name)
-						file_obs_src   = base_obs_src.format(dir_out,name)
-						file_true_src  = base_syn_src.format(dir_in,name)
+						file_obs_grp = base_obs_grp.format(dir_base,model,name)
+						file_obs_src = base_obs_src.format(dir_base,model,name)
+						file_syn_src = base_syn_src.format(dir_base,model,name)
 						#-----------------------------------------------------
 
 						#-------------------- Observed values -------------------------------
-						df_obs_src = pn.read_csv(file_obs_src, usecols=obs_src_columns)
-						df_obs_src.set_index(["source_id","statistic"],inplace=True)
+						df_obs_src = pn.read_csv(file_obs_src, 
+										usecols=obs_src_columns)
+						df_obs_src.set_index(["source_id","statistic"],
+										inplace=True)
 						df_obs_src = df_obs_src.unstack()
 						
-						df_obs_grp = pn.read_csv(file_obs_grp,usecols=obs_grp_columns)
-						df_obs_grp.set_index("Parameter",inplace=True)
+						df_obs_grp = pn.read_csv(file_obs_grp,
+										usecols=obs_grp_columns)
+						df_obs_grp.set_index("Parameter",
+										inplace=True)
 						#------------------------------------------------------------------
 
 						#-------------- True values -----------------------
 						df_true_grp = pn.DataFrame.from_dict(
-											data={"age":age},
-											orient="index",
-											columns=["true"])
+										data={"age":age},
+										orient="index",
+										columns=["true"])
 						df_true_grp.index.name = "Parameter"
-						df_true_src = pn.read_csv(file_true_src,
-											usecols=true_src_columns)
+						df_true_src = pn.read_csv(file_syn_src,
+										usecols=true_src_columns)
 						df_true_src.set_index("source_id",
-											inplace=True)
+										inplace=True)
 						df_true_src.rename(columns=mapper_true2obs,
-											inplace=True)
+										inplace=True)
 						df_true_src.columns = pn.MultiIndex.from_product(
-											[df_true_src.columns,["true"]])
+										[df_true_src.columns,["true"]])
 						#----------------------------------------------------
 
 						#---------- Join ------------------------
@@ -170,11 +175,16 @@ if do_process:
 						#---------------------------- Error, Uncertainty and Credibility ------------------------
 						df_src.columns = df_src.columns.droplevel(0)
 						for tmp in [df_src,df_grp]:
-							tmp["err"] = tmp.apply(lambda x: 100.*(x["mean"] - x["true"])/x["true"],axis = 1)
-							tmp["unc"] = tmp.apply(lambda x: 100.*(x["sd"]/np.abs(x["true"])),  axis = 1)
-							tmp["crd"] = tmp.apply(lambda x: 100.*((x["true"] >= x["hdi_2.5%"]) & 
-																		 (x["true"] <= x["hdi_97.5%"])),
-																		axis = 1)
+							tmp["err"] = tmp.apply(
+								lambda x: 100.*(x["mean"] - x["true"])/x["true"],
+										axis = 1)
+							tmp["unc"] = tmp.apply(
+								lambda x: 100.*(x["sd"]/np.abs(x["true"])),
+										axis = 1)
+							tmp["crd"] = tmp.apply(
+								lambda x: 100.*((x["true"] >= x["hdi_2.5%"]) & 
+										(x["true"] <= x["hdi_97.5%"])),
+										axis = 1)
 						#------------------------------------------------------------------------------------------
 
 						#-------------- Select variables -----------------
@@ -210,98 +220,82 @@ if do_process:
 						dfs_src.append(df_src)
 						#------------------------------------
 
-		#------------ Concatenate --------------------
-		df_grp = pn.concat(dfs_grp,ignore_index=False)
-		df_src = pn.concat(dfs_src,ignore_index=False)
-		#---------------------------------------------
-
-		#------------ Save data --------------------------
-		df_grp.to_hdf(file_data,key="df_grp")
-		df_src.to_hdf(file_data,key="df_src")
-		#-------------------------------------------------
-
-		#----------- Append ----------------
-		dfss_grp.append(df_grp)
-		dfss_src.append(df_src)
-		#------------------------------------
-
 	#------------ Concatenate --------------------
-	df_grp = pn.concat(dfss_grp,ignore_index=False)
-	df_src = pn.concat(dfss_src,ignore_index=False)
+	df_grp = pn.concat(dfs_grp,ignore_index=False)
+	df_src = pn.concat(dfs_src,ignore_index=False)
 	#---------------------------------------------
 
 	#------------ Save data --------------------------
-	df_grp.to_hdf(file_data_all,key="df_grp")
-	df_src.to_hdf(file_data_all,key="df_src")
+	df_grp.to_hdf(file_data,key="df_grp")
+	df_src.to_hdf(file_data,key="df_src")
 	#-------------------------------------------------
 
 #=========================== Plots =======================================
 if do_plt_grp:
 	print("Plotting group-level parameters")
 	#------------ Read data --------------------------------
-	df_grp = pn.read_hdf(file_data_all,key="df_grp")
+	df_grp = pn.read_hdf(file_data,key="df_grp")
 	#-------------------------------------------------------
-
 	df_grp.reset_index(inplace=True)
-
-	pdf = PdfPages(filename=file_plt_grp)
 	for st in sts_grp:
 		fg = sns.relplot(data=df_grp,
 						x="age",
 						y=st["key"],
-						col="distance",
+						row="distance",
 						style="Model",
 						hue="n_stars",
 						kind="line",
 						palette="tab10",
 						facet_kws={"margin_titles":True},
+						legend="full",
+						height=3.0,
+						aspect=1.5
 						)
 		fg.set_xlabels("Age [Myr]")
 		fg.set_ylabels(st["name"])
+		fg.set_titles(row_template="{row_name} pc")
 		fg.set(ylim=st["ylim"])
-		fg.add_legend()
 		sns.move_legend(fg,
 				loc="lower center",
-				bbox_to_anchor=(.45, 1),
-				ncol=6)
+				bbox_to_anchor=(.5, 1),
+				ncol=2)
 		plt.subplots_adjust(wspace=0.1)
-		pdf.savefig(bbox_inches='tight',dpi=300)
+		fg.savefig(file_plt_grp.format(st["key"]),
+			bbox_inches='tight',dpi=300)
 		plt.close()
-	pdf.close()
 	#-------------------------------------------------------------------------
 
 if do_plt_src:
 	print("Plotting source-level parameters")
 	#------------ Read data --------------------------------
-	df_src = pn.read_hdf(file_data_all,key="df_src")
+	df_src = pn.read_hdf(file_data,key="df_src")
 	#-------------------------------------------------------
 
 	df_src.reset_index(inplace=True)
-
-	
-	pdf = PdfPages(filename=file_plt_src)
 	for st in sts_src:
 		fg = sns.relplot(data=df_src,
 						x="age",
 						y=st["key"],
-						col="distance",
+						row="distance",
 						style="Model",
 						hue="n_stars",
 						kind="line",
 						palette="tab10",
 						facet_kws={"margin_titles":True},
+						legend="full",
+						height=3.0,
+						aspect=1.5
 						)
 		fg.set_xlabels("Age [Myr]")
 		fg.set_ylabels(st["name"])
+		fg.set_titles(row_template="{row_name} pc")
 		fg.set(ylim=st["ylim"])
-		fg.add_legend()
-
 		sns.move_legend(fg,
 				loc="lower center",
-				bbox_to_anchor=(.45, 1),
-				ncol=5)
+				bbox_to_anchor=(.5, 1),
+				ncol=2)
 		plt.subplots_adjust(wspace=0.1)
-		pdf.savefig(bbox_inches='tight')
+		fg.savefig(file_plt_src.format(st["key"]),
+			bbox_inches='tight',dpi=300)
 		plt.close()
-	pdf.close()
 	#-------------------------------------------------------------------------

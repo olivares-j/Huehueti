@@ -23,19 +23,28 @@ def relu(x): #With alpha set to zero to improve speed
 def sigmoid(x):
 	return 1./(1.+ pt.exp(-x))
 
-def Phot_band(X,W,b,mu,sd):
+def Phot_band_2_layers(X,W,b,mu,sd):
 	A1  = sigmoid(pt.dot(X,  W[0]) + b[0])
 	A2  = sigmoid(pt.dot(A1, W[1]) + b[1])
-	# A3  = sigmoid(pt.dot(A2, W[2]) + b[2])
-	# A4  = sigmoid(pt.dot(A3, W[3]) + b[3])
-	# A5  = sigmoid(pt.dot(A4, W[4]) + b[4])
-	# A6  = sigmoid(pt.dot(A5, W[5]) + b[5])
-	# A7  = sigmoid(pt.dot(A6, W[6]) + b[6])
 	# Final linear output (no activation)
 	out = pt.dot(A2,W[2]) + b[2]
-	# out = pt.dot(A3,W[3]) + b[3]
-	# out = pt.dot(A4,W[4]) + b[4]
+	return out.flatten()
 
+def Phot_band_3_layers(X,W,b,mu,sd):
+	A1  = sigmoid(pt.dot(X,  W[0]) + b[0])
+	A2  = sigmoid(pt.dot(A1, W[1]) + b[1])
+	A3  = sigmoid(pt.dot(A2, W[2]) + b[2])
+	# Final linear output (no activation)
+	out = pt.dot(A3,W[3]) + b[3]
+	return out.flatten()
+
+def Phot_band_4_layers(X,W,b,mu,sd):
+	A1  = sigmoid(pt.dot(X,  W[0]) + b[0])
+	A2  = sigmoid(pt.dot(A1, W[1]) + b[1])
+	A3  = sigmoid(pt.dot(A2, W[2]) + b[2])
+	A4  = sigmoid(pt.dot(A3, W[3]) + b[3])
+	# Final linear output (no activation)
+	out = pt.dot(A4,W[4]) + b[4]
 	return out.flatten()
 
 class MLP_phot:
@@ -44,7 +53,7 @@ class MLP_phot:
 
 	def __init__(self,
 		files_mlps: dict,
-		features = ["logAge","Mini"],
+		features = ["logAge","logL"],
 		targets = ["G_BPmag","Gmag","G_RPmag"],
 		):
 		"""Load the mlps for each photometric band
@@ -57,12 +66,12 @@ class MLP_phot:
 		domains = []
 		mus_features = []
 		sds_features = []
+		nms_layers   = []
 		for name,file_mlp in files_mlps.items():
 			print("Reading band: {0}".format(name))
 			assert os.path.exists(file_mlp),"The file containing optimal weights and scalers cannot be found. Please, provide a valid path"
 			band = {}
 			
-
 			with open(file_mlp, 'rb') as file:
 				tmp = load(file)
 				tmp_weights   = tmp["weights"]
@@ -77,8 +86,7 @@ class MLP_phot:
 
 			assert tmp_features == features, "Features mismatch! Expected: {0}".format(features)
 			assert tmp_targets[0] in targets, "Target mismatch! Expected on of {0}".format(targets)
-			assert tmp_num_lyrs == 2, "Error: mismatch in number of layers! Expected 4"
-
+		
 			band["W"] = tmp_weights[::2]
 			band["b"] = tmp_weights[1::2]
 			band["mu"] = tmp_mu.loc[tmp_targets].to_numpy()
@@ -88,6 +96,7 @@ class MLP_phot:
 			domains.append(tmp_domain)
 			mus_features.append(tmp_mu.loc[features].to_numpy())
 			sds_features.append(tmp_sd.loc[features].to_numpy())
+			nms_layers.append(tmp["num_layers"])
 
 			self.bands[name] = band
 
@@ -105,6 +114,19 @@ class MLP_phot:
 			np.testing.assert_equal(tmp_sd_features,sd_features,
 				err_msg="sd_features mismatch!")
 
+		num_layers = np.array(nms_layers)
+		msg_nml = "Error: all bands must have the same number of layers"
+		assert num_layers.std() == 0.0,msg_nml
+
+		if num_layers.mean() == 2:
+			self.Phot_band = Phot_band_2_layers
+		elif num_layers.mean() == 3:
+			self.Phot_band = Phot_band_3_layers
+		elif num_layers.mean() == 4:
+			self.Phot_band = Phot_band_4_layers
+		else:
+			sys.exit("Unsupported number of layers")
+
 		self.domain = domain
 		self.mu_features = mu_features
 		self.sd_features = sd_features
@@ -120,14 +142,23 @@ class MLP_phot:
 		A0 = (x - self.mu_features)/self.sd_features
 
 
-		G_BPmag = Phot_band(X=A0,W=self.bands["G_BPmag"]["W"],b=self.bands["G_BPmag"]["b"],
-						mu=self.bands["G_BPmag"]["mu"],sd=self.bands["G_BPmag"]["sd"])
+		G_BPmag = self.Phot_band(X=A0,
+						W=self.bands["G_BPmag"]["W"],
+						b=self.bands["G_BPmag"]["b"],
+						mu=self.bands["G_BPmag"]["mu"],
+						sd=self.bands["G_BPmag"]["sd"])
 
-		Gmag = Phot_band(X=A0,W=self.bands["Gmag"]["W"],b=self.bands["Gmag"]["b"],
-						mu=self.bands["Gmag"]["mu"],sd=self.bands["Gmag"]["sd"])
+		Gmag = self.Phot_band(X=A0,
+						W=self.bands["Gmag"]["W"],
+						b=self.bands["Gmag"]["b"],
+						mu=self.bands["Gmag"]["mu"],
+						sd=self.bands["Gmag"]["sd"])
 
-		G_RPmag = Phot_band(X=A0,W=self.bands["G_RPmag"]["W"],b=self.bands["G_RPmag"]["b"],
-						mu=self.bands["G_RPmag"]["mu"],sd=self.bands["G_RPmag"]["sd"])
+		G_RPmag = self.Phot_band(X=A0,
+						W=self.bands["G_RPmag"]["W"],
+						b=self.bands["G_RPmag"]["b"],
+						mu=self.bands["G_RPmag"]["mu"],
+						sd=self.bands["G_RPmag"]["sd"])
 
 		return pt.stack([G_BPmag,Gmag,G_RPmag],axis=1)
 
@@ -143,9 +174,9 @@ if __name__ == "__main__":
 
 	file_iso      = dir_mlps + "Gaia_EDR3_0.1myr.dat"
 	files_mlps = {
-	"G_BPmag":dir_mlps + case +"/G_BPmag_l2/seed_0/mlp.pkl",
-	"Gmag":   dir_mlps + case +"/Gmag_l2/seed_0/mlp.pkl",
-	"G_RPmag":dir_mlps + case +"/G_RPmag_l2/seed_0/mlp.pkl"
+	"G_BPmag":dir_mlps + case +"/G_BPmag_l3/seed_0/mlp.pkl",
+	"Gmag":   dir_mlps + case +"/Gmag_l3/seed_0/mlp.pkl",
+	"G_RPmag":dir_mlps + case +"/G_RPmag_l3/seed_0/mlp.pkl"
 	}
 	targets = ["G_BPmag","Gmag","G_RPmag"]
 	features = ["logAge","logL"]

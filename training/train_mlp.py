@@ -14,22 +14,25 @@ from mlp_model import create_custom_model, compile_model, evaluate_gradient,lear
 
 os.environ["PYTHONHASHSEED"] = "42"
 # os.environ["TF_DETERMINISTIC_OPS"] = "1"
-os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
 
+age_range = "15-25Myr"
+# age_range = "20-220Myr"
+
 #------------- Input data ---------------------------
 max_label = 1 # label >1 are evolved stars that we do not need
 features = ["logAge","logL"]
-targets  = ['Jmag']
+targets  = ['G_BPmag']
 n_features = len(features)
 n_targets = len(targets)
 #----------------------------------------------------
 
 # --------------- Model properties --------------------------------
-list_of_num_layers = [2] # Number of hidden layers
+list_of_num_layers = [3] # Number of hidden layers
 seeds = [0] # Seeds for the MLP initializers
 activation_layers = "sigmoid" # Activation functions for each hidden layer
 activation_output = "linear"  # Activation function for the output layer
@@ -38,9 +41,9 @@ metric = "root_mean_squared_error"
 #--------------------------------------------------------------------------
 
 #--------- Fixed Hyperparameters ------------------------------------
-optimization_trials = 100
+optimization_trials = 50
 epochs = int(5e2)
-lr_decay_function = "InverseTimeDecay"			
+lr_decay_function = "ExponentialDecay"			
 lr_decay_steps = epochs
 # batch_size = 90971
 # lr_initial = 9.0e-2
@@ -54,21 +57,22 @@ beta_2 = 0.999 # Adam optimizer beta2 default 0.999
 clipnorm = 1.0 # The norm of the gradients does not goes larger than this value
 validation_split = 0.2 # 20% of dataset used for validation
 seed_split = 0
+verbose = 0
 #---------------------------------------------------------------------------------
 
 #------------ Optimized -----------------------------------
-dict_lr_itl = {"value":None,"low":0.01,"high":0.8}
-dict_lr_dcr = {"value":None,"low":0.01,"high":10.}
-dict_btsz   = {"value":None,"choices":[32,64,128,256,512,1024]}
-dict_lysz   = {"value":None,"low":5,"high":50}
+dict_lr_itl = {"value":None,"low":1e-3,"high":0.2}
+dict_lr_dcr = {"value":None,"low":0.5,"high":1.}
+dict_btsz   = {"value":None,"choices":[4,8,16,32,64,128,256,512]}
+dict_lysz   = {"value":None,"low":2,"high":60}
 #--------------------------------------------------------------------------------------------------------
 
 
 #--------------- Directories and files ---------------------------------------------
-dir_base  = "/home/jolivares/Models/PARSEC/20-220Myr/"
+dir_base  = "/home/jolivares/Models/PARSEC/{0}/".format(age_range)
 # Remove the # from the row contain the header in the input file
-file_iso  = dir_base + "2MASS_0.1myr.dat" # Input file
-dir_mlps  = dir_base + "Optuna_{0}_{1}_{2}_epochs_{3:1.0e}_trials_{4}_0.1myr/".format(
+file_iso  = dir_base + "Gaia_EDR3_0.5myr.dat" # Input file
+dir_mlps  = dir_base + "Optuna_{0}_{1}_{2}_epochs_{3:1.0e}_trials_{4}_0.5myr/".format(
 lr_decay_function,features[0],features[1],epochs,optimization_trials)
 file_mtr  = dir_mlps + "Metric_{0}.png"
 file_grd  = dir_mlps + "Gradient_{0}.png"
@@ -277,7 +281,7 @@ for num_layers in list_of_num_layers:
 						sample_weight=w_train,
 						epochs=epochs,
 						batch_size=batch_size,
-						verbose=0,
+						verbose=verbose,
 						# callbacks=[early_stopping]
 						)
 			#----------------------------------------------
@@ -453,8 +457,6 @@ for num_layers in list_of_num_layers:
 				"sd_transform":iso_sd,
 				"weights":optimal_model.get_weights(),
 				"phot_min":phot_min,
-				# "logL_lower_par":logL_lower_par,
-				# "logL_upper_par":logL_upper_par,
 				"domain":domain,
 				"seed":seed,
 				"val_{0}".format(metric):fit.history["val_{0}".format(metric)][-1],

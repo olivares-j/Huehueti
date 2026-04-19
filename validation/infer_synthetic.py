@@ -8,15 +8,28 @@ import dill
 sys.path.append("/home/jolivares/Repos/Huehueti/src/Huehueti/")
 from Huehueti import Huehueti
 
-model = "base"
-case = "Optuna_logAge_logL_epochs_5e+02_0.1myr"
+age_range = "20-220Myr"
+# age_range = "15-25Myr"
 
-dir_base = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/20-220Myr/{0}/".format(model)
-dir_mlps = "/home/jolivares/Models/PARSEC/20-220Myr/"
+model = "outliers"
+# case = "Optuna_logAge_logL_epochs_5e+02_0.1myr"
+case = "Optuna_InverseTimeDecay_logAge_logL_epochs_5e+02_trials_100_0.1myr"
 
-list_of_ages      = list(range(20,240,20))
+dir_base = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/{0}/{1}/".format(age_range,model)
+dir_mlps = "/home/jolivares/Models/PARSEC/{0}/".format(age_range)
+
+
+if age_range == "15-25Myr":
+	list_of_ages = list(range(15,27,2))
+elif age_range == "20-220Myr":
+	list_of_ages = list(range(20,240,20))
+elif age_range == "200-600Myr":
+	list_of_ages = list(range(200,650,50))
+else:
+	sys.exit("Undefined age range")
+
 list_of_distances = [50,100,200,400]
-list_of_n_stars   = [30]
+list_of_n_stars   = [15,30]
 list_of_seeds     = [0,1,2,3,4]
 
 dir_inputs  = dir_base + "inputs/"
@@ -56,8 +69,6 @@ def set_prior(age,distance):
 		},
 	'log_lum' : {
 		'family' : 'Uniform',
-		# "lower_par":[-0.72855578,3.0677147 ],
-		# "upper_par":[-1.58449405,15.91599175]
 		},
 	'distance_mu' : {
 		'family' : 'Gaussian',

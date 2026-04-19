@@ -4,106 +4,96 @@ import os
 sys.path.append("/home/jolivares/Repos/Huehueti/src/Huehueti/")
 from Huehueti import Huehueti
 
-system = "Pleiades_test"
+case = "Pleiades"
+model = "extinction"
 
-dir_base       = "/home/jolivares/Repos/Huehueti/validation/real/"
-file_mlp_phot  = "/home/jolivares/Repos/Huehueti/mlps/PARSEC/GP2_l9_s512/mlp.pkl"
-file_mlp_mass  = "/home/jolivares/Repos/Huehueti/mlps/PARSEC/mTg_l7_s256/mlp.pkl"
+dir_base = "/home/jolivares/Repos/Huehueti/validation/real/{0}/"
+dir_mlps = "/home/jolivares/Models/PARSEC/20-220Myr/Optuna_InverseTimeDecay_logAge_logL_epochs_5e+02_trials_100_0.1myr/"
 
+file_data = dir_base.format(case) + "inputs/Hunt+2024_>10.5g.csv"
+dir_out   = dir_base.format(case) + "{0}_l2_0.5Av_10.5G_FullRankADVI/".format(model)
 
-dir_inputs  = dir_base + "inputs/"
-dir_outputs = dir_base + "outputs/"
-base_name   = "{0}"
-
-list_of_filters = [
-	{'g':10.0,'g_error':1e-3,
-	'bp':10.0,'bp_error':1e-3,
-	'rp':10.0,'rp_error':1e-3,
-	'gmag':8.0,'e_gmag':5e-3,
-	'rmag':8.0,'e_rmag':5e-3,
-	'imag':8.0,'e_imag':5e-3,
-	'zmag':8.0,'e_zmag':5e-3,
-	'ymag':8.0,'e_ymag':5e-3,
-	'Jmag':7.0,'e_Jmag':3e-2,
-	'Hmag':7.0,'e_Hmag':3e-2,
-	'Kmag':7.0,'e_Kmag':3e-2
+files_mlps = {
+	"G_BPmag":dir_mlps + "/G_BPmag_l2/seed_0/mlp.pkl",
+	"Gmag":   dir_mlps + "/Gmag_l2/seed_0/mlp.pkl",
+	"G_RPmag":dir_mlps + "/G_RPmag_l2/seed_0/mlp.pkl"
 	}
-]
 
+absolute_photometry = ['G_BPmag','Gmag','G_RPmag']
 observables = {
-"photometry":['g', 'bp', 'rp','gmag','rmag','imag','zmag','ymag','Jmag','Hmag','Kmag'],
-"photometry_error":['g_error', 'bp_error', 'rp_error','e_gmag','e_rmag','e_imag','e_zmag','e_ymag','e_Jmag','e_Hmag','e_Kmag'],
+	"photometry":[ 'BP','G', 'RP'],
+	"photometry_error":['BP_error','G_error','RP_error'],
 }
+parameters = {"age":None}
+hyperparameters = {"distance":"distance"}
 
-priors = {
+
+prior = {
 	'age' : {
-		'family' : "TruncatedNormal",
-		'mu'    : 120.0,
-		'sigma' : 30.,
-		'lower' : 20,
-		'upper' : 200,
+		'family' : "Uniform",
 		},
-	'distance' : {
+	'log_lum' : {
+		'family' : 'Uniform',
+		},
+	'distance_mu' : {
 		'family' : 'Gaussian',
-		'mu' : 136.0,
+		'mu' : 50,
 		'sigma' : 10.
 		},
-	"distance_dispersion":{
+	"distance_sd":{
 		"family": "Exponential",
 		"scale" : 5.
 		},
-	"photometric_dispersion":{
-		"family": "Exponential",
-		"sigma" : 0.01,
-		"beta"  : 100.0
+	"extinction":{
+		"family": "Uniform",
+		"lower":0.0,
+		"upper":0.5,
+		"mu":2.0,
+		"sigma" : 0.1,
 		},
-	"astrometric_outliers":{
-		"weights" : [90,10],
-		"lower"   : 50.0,
-		"upper"   : 150.0,
-		"beta"    : 1/20.
-	},
-	"photometric_outliers":{
-		"weights" : [90,10],
-		"lower"   : 0.0,
-		"upper"   : 30.0,
-		"beta"    : 1/20.
-	},
+	"outliers":{
+		"family":"StudentT",
+		"beta": 1/30.,
+		"scale":1.0
+		}
 }
+					
+os.makedirs(dir_out,exist_ok=True)
 
-
-for flt in list_of_filters:
-	file_data = dir_inputs  + "{0}.csv".format(system)
-	dir_out   = dir_outputs + base_name.format(system)+"/"
-	file_sts  = dir_out + "Global_statistics.csv"
-
-	if os.path.isfile(file_sts):
-		continue
-		
-	os.makedirs(dir_out,exist_ok=True)
-
-	hue = Huehueti(
-		dir_out = dir_out, 
-		file_mlp_phot=file_mlp_phot,
-		file_mlp_mass=file_mlp_mass,
-		observables=observables)
-	hue.load_data(
-		file_data = file_data,
-		max_phot_uncertainty=flt)
-	hue.setup(prior = priors)
-	# hue.plot_pgm()
-	hue.run(
-		init_iters=int(8e4),
-		init_refine=False,
-		nuts_sampler="advi",
-		tuning_iters=int(5e4),
-		sample_iters=2000,
-		prior_iters=2000)
-	hue.load_trace()
-	hue.convergence()
-	hue.plot_chains()
-	hue.plot_posterior()
-	hue.plot_cpp()
-	hue.plot_predictions()
-	hue.plot_cmd(cmd={"magnitude":"g","color":["g","rp"]})
-	hue.save_statistics()
+hue = Huehueti(
+	dir_out = dir_out, 
+	observables=observables,
+	absolute_photometry=absolute_photometry,
+	hyperparameters = hyperparameters,
+	files_mlps=files_mlps
+	)
+hue.load_data(
+	file_data = file_data
+	)
+hue.setup(
+	model=model,
+	parameters = parameters, 
+	prior = prior
+	)
+hue.run(
+	target_accept=0.85,
+	init_method="fullrank_advi",
+	init_iters=int(5e5),
+	init_tracker = False,
+	nuts_sampler="fullrank_advi",
+	# nuts_sampler="numpyro",
+	tuning_iters=int(2e3),
+	sample_iters=int(2e3),
+	prior_iters=int(2e3),
+	chains=2
+	)
+hue.load_trace()
+hue.convergence()
+hue.plot_chains()
+hue.plot_posterior()
+hue.plot_cpp()
+hue.plot_predictions()
+hue.plot_cmd(cmd={
+		"magnitude":"G",
+		"color":["G","RP"]})
+hue.save_statistics()

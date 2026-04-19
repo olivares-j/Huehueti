@@ -19,7 +19,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 #------------------------------------------------------------------
 
 # Local model/utility imports.
-from Models import absolute_to_apparent,Model_v0, Model_v1, Model_v2, Model_v3
+from Models import absolute_to_apparent
 from MLPs import MLP_phot
 
 # Configure pandas display to show all columns when printing summaries.
@@ -251,7 +251,7 @@ class Huehueti:
 	def setup(self,
 		parameters: Dict[str,float],
 		prior: Dict[str, Any],
-		model: str = "base",
+		model: str = "outliers",
 		features: List[str] = ["logAge","logL"]
 	) -> None:
 		"""
@@ -352,83 +352,33 @@ class Huehueti:
 		#---------------------------------------------------------------------------------
 
 		if model == "base":
-			self.Model = Model_v0(
-							mlp_phot=self.mlp_phot,
-							parameters = parameters,
-							prior = prior,
-							identifiers = identifiers,
-							astrometry_names = astrometry_names,
-							astrometry_mu = astrometry_mu,
-							astrometry_sd = astrometry_sd,
-							astrometry_ix = astrometry_ix,
-							photometry_names = photometry_names,
-							photometry_mu = photometry_mu,
-							photometry_sd = photometry_sd,
-							photometry_ix = photometry_ix,
-							spectroscopy_names = spectroscopy_names,
-							spectroscopy_mu = spectroscopy_mu,
-							spectroscopy_sd = spectroscopy_sd,
-							spectroscopy_ix = spectroscopy_ix
-							)
+			from Models import Model_base as Model
 		elif model == "outliers":
-			self.Model = Model_v1(
-							mlp_phot=self.mlp_phot,
-							parameters = parameters,
-							prior = prior,
-							identifiers = identifiers,
-							astrometry_names = astrometry_names,
-							astrometry_mu = astrometry_mu,
-							astrometry_sd = astrometry_sd,
-							astrometry_ix = astrometry_ix,
-							photometry_names = photometry_names,
-							photometry_mu = photometry_mu,
-							photometry_sd = photometry_sd,
-							photometry_ix = photometry_ix,
-							spectroscopy_names = spectroscopy_names,
-							spectroscopy_mu = spectroscopy_mu,
-							spectroscopy_sd = spectroscopy_sd,
-							spectroscopy_ix = spectroscopy_ix
-							)
+			from Models import Model_outliers as Model
 		elif model == "extinction":
-			self.Model = Model_v2(
-							mlp_phot=self.mlp_phot,
-							parameters = parameters,
-							prior = prior,
-							identifiers = identifiers,
-							astrometry_names = astrometry_names,
-							astrometry_mu = astrometry_mu,
-							astrometry_sd = astrometry_sd,
-							astrometry_ix = astrometry_ix,
-							photometry_names = photometry_names,
-							photometry_mu = photometry_mu,
-							photometry_sd = photometry_sd,
-							photometry_ix = photometry_ix,
-							spectroscopy_names = spectroscopy_names,
-							spectroscopy_mu = spectroscopy_mu,
-							spectroscopy_sd = spectroscopy_sd,
-							spectroscopy_ix = spectroscopy_ix
-							)
-		elif (model == "outliers+extinction") or (model == "extinction+outliers"):
-			self.Model = Model_v3(
-							mlp_phot=self.mlp_phot,
-							parameters = parameters,
-							prior = prior,
-							identifiers = identifiers,
-							astrometry_names = astrometry_names,
-							astrometry_mu = astrometry_mu,
-							astrometry_sd = astrometry_sd,
-							astrometry_ix = astrometry_ix,
-							photometry_names = photometry_names,
-							photometry_mu = photometry_mu,
-							photometry_sd = photometry_sd,
-							photometry_ix = photometry_ix,
-							spectroscopy_names = spectroscopy_names,
-							spectroscopy_mu = spectroscopy_mu,
-							spectroscopy_sd = spectroscopy_sd,
-							spectroscopy_ix = spectroscopy_ix
-							)
+			from Models import Model_outliers_extinction as Model
 		else:
-			sys.exit("Unsupported model! Do you mean: base, outliers, extinction or outliers+extinction?")
+			sys.exit("Unsupported model! Do you mean: base, outliers, or extinction")
+		print("Working with the {0} model.".format(model))
+
+		self.Model = Model(
+							mlp_phot=self.mlp_phot,
+							parameters = parameters,
+							prior = prior,
+							identifiers = identifiers,
+							astrometry_names = astrometry_names,
+							astrometry_mu = astrometry_mu,
+							astrometry_sd = astrometry_sd,
+							astrometry_ix = astrometry_ix,
+							photometry_names = photometry_names,
+							photometry_mu = photometry_mu,
+							photometry_sd = photometry_sd,
+							photometry_ix = photometry_ix,
+							spectroscopy_names = spectroscopy_names,
+							spectroscopy_mu = spectroscopy_mu,
+							spectroscopy_sd = spectroscopy_sd,
+							spectroscopy_ix = spectroscopy_ix
+							)
 			
 		for key,value in self.Model.initial_point().items():
 			assert np.isfinite(value).all(),"Initial point error at {0}\n{1}".format(key,value)
@@ -453,6 +403,9 @@ class Huehueti:
 		init_method: str = "advi",
 		init_iters: int = int(1e6),
 		init_absolute_tol: float = 5e-10,
+		init_relative_tol: float = 1e-5,
+		init_refine: bool = True,
+		init_tracker: bool = True,
 		prior_predictive: bool = True,
 		prior_iters: int = 2000,
 		progressbar: bool = True,
@@ -465,64 +418,80 @@ class Huehueti:
 
 		# Only run sampling if posterior file does not already exist.
 		if not os.path.exists(self.file_chains):
+			#================== Optimization with variational inference ============================================
 			if not os.path.exists(self.file_start):
-				#================== Optimization with variational inference ============================================
-				if init_method.lower() == "advi":
-					print("Finding initial positions with ADVI method")
-					vi = pm.ADVI(model=self.Model)
-				elif init_method.lower() == "fullrank_advi":
-					print("Finding initial positions with FullRankADVI method")
-					vi = pm.FullRankADVI(model=self.Model)
-				elif init_method.lower() == "svgd":
-					print("Finding initial positions with SVGD method")
-					vi = pm.SVGD(
-						n_particles=100,
-						jitter=1,
-						# obj_optimizer=pm.sgd(learning_rate=0.01),
-						model=self.Model)
-				else:
-					sys.exit("Unrecognized VI method")
+				
+				match init_method.lower():
+					case "advi":
+						print("Finding initial positions with ADVI method")
+						vi = pm.ADVI(model=self.Model)
+					case "fullrank_advi":
+						print("Finding initial positions with FullRankADVI method")
+						vi = pm.FullRankADVI(model=self.Model)
+					case "svgd":
+						print("Finding initial positions with SVGD method")
+						vi = pm.SVGD(
+							n_particles=100,
+							jitter=1,
+							model=self.Model)
+					case _:
+						sys.exit("Unrecognized init_method")
+			else:
+				with open(self.file_start, 'rb') as in_strm:
+					vi = dill.load(in_strm)
+			#============================================================================
 
 				
-				# Convergence callbacks used to stop ADVI when parameter changes are small.
-				cnv_abs = pm.callbacks.CheckParametersConvergence(
-						tolerance=init_absolute_tol,
-						diff="absolute",ord=None)
+			#================== Callbacks =========================	
+			cnv_abs = pm.callbacks.CheckParametersConvergence(
+					tolerance=init_absolute_tol,
+					diff="absolute",ord=None)
+			cnv_rel = pm.callbacks.CheckParametersConvergence(
+					tolerance=init_relative_tol,
+					diff="relative",ord=None)
+
+			if init_tracker:
 				tracker = pm.callbacks.Tracker(
-					  	mean=vi.approx.mean.eval,
+						mean=vi.approx.mean.eval,
 						std=vi.approx.std.eval)
 
-				approx = vi.fit(
-					n=init_iters,
-					callbacks=[cnv_abs,tracker],
-					progressbar=True)
-
-				#------------- Plot the ADVI loss (last init_plot_iters iterations) ----------------
-				fig = plt.figure(figsize=(16, 9))
-				mu_ax = fig.add_subplot(221)
-				std_ax = fig.add_subplot(222)
-				hist_ax = fig.add_subplot(212)
-				mu_ax.plot(tracker["mean"])
-				mu_ax.set_title("Mean track")
-				std_ax.plot(tracker["std"])
-				std_ax.set_title("Std track")
-				hist_ax.plot(vi.hist)
-				hist_ax.set_yscale("log")
-				hist_ax.set_title("Negative ELBO track")
-				plt.savefig(self.file_vi_loss)
-				plt.close()
-				#-----------------------------------------------------------
-
-				# Save initialization to disk so future runs can reuse it.
-				with open(self.file_start, "wb") as out_file:
-					dill.dump(approx, out_file)
+				callbacks = [cnv_abs,cnv_rel,tracker]
 			else:
-				assert nuts_sampler.lower() != init_method.lower(),("Error: "+
-				"To sample with the same method as the initialization "+
-				"please remove file:\n {0}".format(self.file_start))
+				callbacks = [cnv_abs,cnv_rel]
+			#=======================================================
 
-				with open(self.file_start, 'rb') as in_strm:
-					approx = dill.load(in_strm)
+			#============ Sample with VI ==============================
+			if init_refine:
+				vi.fit(
+					n=init_iters,
+					callbacks=callbacks,
+					progressbar=True)
+			else:
+				vi.approx.hist = vi.hist
+			assert len(vi.approx.hist)>0, "The VI approximation is empty!\n Set init_refine=True"
+			approx = vi.approx
+
+			# Save initialization to disk so future runs can reuse it.
+			with open(self.file_start, "wb") as out_file:
+				dill.dump(vi, out_file)
+			#===========================================================
+
+			#------------- Plot the ADVI loss ----------------
+			fig = plt.figure(figsize=(16, 9))
+			mu_ax = fig.add_subplot(221)
+			std_ax = fig.add_subplot(222)
+			hist_ax = fig.add_subplot(212)
+			mu_ax.set_title("Mean track")
+			std_ax.set_title("Std track")
+			hist_ax.set_title("Negative ELBO track")
+			hist_ax.set_yscale("log")
+			hist_ax.plot(approx.hist)
+			if init_tracker:
+				mu_ax.plot(tracker["mean"])
+				std_ax.plot(tracker["std"])
+			plt.savefig(self.file_vi_loss)
+			plt.close()
+			#--------------------------------------------------
 
 			#----------- Extract values needed for sampler ---------------------
 			mu_point = approx.mean.eval()

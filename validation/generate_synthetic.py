@@ -3,19 +3,40 @@ import numpy as np
 from Amasijo import Amasijo
 
 model      = "outliers"
-age_range  = "20-220Myr"
+age_range  = "15-25Myr"
+max_Av     = 0.0
 
 dir_inputs = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/{0}/{1}/inputs/".format(age_range,model)
 base_name = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 
-list_of_ages      = list(range(20,240,20))
+if age_range == "15-25Myr":
+	list_of_ages = list(range(15,27,2))
+elif age_range == "20-220Myr":
+	list_of_ages = list(range(20,240,20))
+elif age_range == "200-600Myr":
+	list_of_ages = list(range(200,650,50))
+else:
+	sys.exit("Undefined age range")
+
 list_of_distances = [50,100,200,400]
 list_of_n_stars   = [15,30,60]
 list_of_seeds     = [0,1,2,3,4]
 
 def mass_limits(age,distance):
 	if distance == 50:
-		if age == 20:
+		if age == 15:
+			return [0.,3.19]
+		elif age == 17:
+			return [0.,3.19]
+		elif age == 19:
+			return [0.,3.59]
+		elif age == 21:
+			return [0.,3.19]
+		elif age == 23:
+			return [0.,3.19]
+		elif age == 25:
+			return [0.,3.0]
+		elif age == 20:
 			return [0.,3.20]
 		elif age == 40:
 			return [0.,3.18]
@@ -38,7 +59,19 @@ def mass_limits(age,distance):
 		elif age == 220:
 			return [0.,2.75]
 	elif distance == 100:
-		if age == 20:
+		if age == 15:
+			return [0.,5.8]
+		elif age == 17:
+			return [0.,5.8]
+		elif age == 19:
+			return [0.,5.8]
+		elif age == 21:
+			return [0.,5.4]
+		elif age == 23:
+			return [0.,5.8]
+		elif age == 25:
+			return [0.,5.3]
+		elif age == 20:
 			return [0.,5.7]
 		elif age == 40:
 			return [0.,5.3]
@@ -61,7 +94,19 @@ def mass_limits(age,distance):
 		elif age == 220:
 			return [0.,3.5]
 	elif distance == 200:
-		if age == 20:
+		if age == 15:
+			return [0.,9.9]
+		elif age == 17:
+			return [0.,9.3]
+		elif age == 19:
+			return [0.,8.7]
+		elif age == 21:
+			return [0.,8.5]
+		elif age == 23:
+			return [0.,8.5]
+		elif age == 25:
+			return [0.,8.3]
+		elif age == 20:
 			return [0.,8.7]
 		elif age == 40:
 			return [0.,7.1]
@@ -84,7 +129,19 @@ def mass_limits(age,distance):
 		elif age == 220:
 			return [0.,100.0]
 	elif distance == 400:
-		if age == 20:
+		if age == 15:
+			return [0.,12.5]
+		elif age == 17:
+			return [0.,11.8]
+		elif age == 19:
+			return [0.,11.2]
+		elif age == 21:
+			return [0.,10.7]
+		elif age == 23:
+			return [0.,11.8]
+		elif age == 25:
+			return [0.,100.0]
+		elif age == 20:
 			return [0.,10.9]
 		elif age == 40:
 			return [0.,100.0]
@@ -127,15 +184,15 @@ def isochrones_args(age,distance):
 	args = {
 	"model":"PARSEC",
 	"age": float(age),
-	"Av_limits":[0.0,0.0],
+	"Av_limits":[0.0,max_Av],
 	"mass_limits":mass_limits(age,distance),
 	"MIST_args":{
 		"metallicity":0.012,
 		},
 	"PARSEC_args":{
 		"files":[
-		"/home/jolivares/Models/PARSEC/20-220Myr/Gaia_EDR3_0.1myr.dat",
-		"/home/jolivares/Models/PARSEC/20-220Myr/2MASS_0.1myr.dat",
+		"/home/jolivares/Models/PARSEC/{0}/Gaia_EDR3_0.025myr.dat".format(age_range),
+		"/home/jolivares/Models/PARSEC/{0}/2MASS_0.025myr.dat".format(age_range),
 		],
 		"max_label":1,
 		"bands_wavelengths":[6217.6,5109.7,7769.0,12350.,16620.,21590.], # Same order as bands

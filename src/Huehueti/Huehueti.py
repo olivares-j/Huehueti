@@ -20,7 +20,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 # Local model/utility imports.
 from Models import absolute_to_apparent
-from MLPs import MLP_phot
+from MLPs import MLP_phot, MLP_one
 
 # Configure pandas display to show all columns when printing summaries.
 pn.set_option('display.max_columns', None)
@@ -147,16 +147,21 @@ class Huehueti:
 		distance : float
 			Distance in parsecs used to transform absolute magnitude limits to apparent.
 		"""
-		phot_min = []
-		for name,file_mlp in self.files_mlps.items():
-			with open(file_mlp, 'rb') as file:
+		# phot_min = []
+		# for name,file_mlp in self.files_mlps.items():
+		# 	if name == "Mini":
+		# 		continue
+		# 	with open(file_mlp, 'rb') as file:
+		# 		mlp = dill.load(file)
+		# 		phot_min.append(mlp["phot_min"][name])
+		with open(self.files_mlps["Phot"], 'rb') as file:
 				mlp = dill.load(file)
-				phot_min.append(mlp["phot_min"][name])
-
+				phot_min = mlp["phot_min"]
 		
 		# Convert absolute magnitude limit to apparent magnitude at given distance:
 		# m = M + 5 log10(d) - 5
 		phot_lim = phot_min + 5.0*np.log10(distance) - 5.0
+		phot_lim.index = self.observables["photometry"]
 		return phot_lim
 
 	def load_data(self, 
@@ -265,10 +270,21 @@ class Huehueti:
 			Prior specification passed to Model_v0.
 		starting_points : optional initial values (currently unused)
 		"""
-		#----------------- Initialize NNs -------------------
-		self.mlp_phot = MLP_phot(files_mlps=self.files_mlps,
-			features=features,
-			targets=self.absolute_photometry)
+		#----------------- Initialize NNs ------------------------
+		self.mlp_phot = MLP_phot(
+			file_mlp=self.files_mlps["Phot"],
+			features = features,
+			targets = self.absolute_photometry)
+
+		self.mlp_mass = MLP_one(
+			features=["logAge","logL"],
+			target="Mini",
+			file_mlp=self.files_mlps["Mini"])
+
+		self.mlp_logl = MLP_one(
+			features=["logAge","Mini"],
+			target="logL",
+			file_mlp=self.files_mlps["logL"])
 		#----------------------------------------------------
 
 		
@@ -277,7 +293,7 @@ class Huehueti:
 		if parameters["age"] is None:
 			assert "age"  in prior.keys(), KeyError('Please, provide a prior for the age parameter')
 			assert prior["age"]["family"]  in ["TruncatedNormal","Uniform"], KeyError("Unknown family of age prior")
-		elif isinstance(parameters["age"],float()):
+		elif isinstance(parameters["age"],float):
 			print("The age parameter will be fixed to: {0} Myr".format(parameters["age"]))
 		else:
 			KeyError("The age parameter can only be None or float")
@@ -353,9 +369,19 @@ class Huehueti:
 
 		if model == "base":
 			from Models import Model_base as Model
+		elif model == "binaries":
+			from Models import Model_binaries as Model
+		elif model == "base+dispersion":
+			from Models import Model_base_dispersion as Model
+		elif model == "binaries+dispersion":
+			from Models import Model_binaries_dispersion as Model
 		elif model == "outliers":
 			from Models import Model_outliers as Model
-		elif model == "extinction":
+		elif model == "shift":
+			from Models import Model_shift as Model
+		elif model == "base+extinction":
+			from Models import Model_base_extinction as Model
+		elif model == "outliers+extinction":
 			from Models import Model_outliers_extinction as Model
 		else:
 			sys.exit("Unsupported model! Do you mean: base, outliers, or extinction")
@@ -363,6 +389,8 @@ class Huehueti:
 
 		self.Model = Model(
 							mlp_phot=self.mlp_phot,
+							mlp_mass=self.mlp_mass,
+							mlp_logl=self.mlp_logl,
 							parameters = parameters,
 							prior = prior,
 							identifiers = identifiers,
@@ -411,10 +439,15 @@ class Huehueti:
 		progressbar: bool = True,
 		nuts_sampler: str = "numpyro",
 		nuts_sampler_kwargs: Optional[Dict] = None,
+		path_chunksize: int = 10000,
 		random_seed: Optional[int] = None) -> None:
+
 		"""
 		Performs the variational initialization (ADVI) followed by MCMC sampling.
 		"""
+
+		# Avoid large and heavy line rendering
+		matplotlib.rcParams["agg.path.chunksize"] = path_chunksize
 
 		# Only run sampling if posterior file does not already exist.
 		if not os.path.exists(self.file_chains):
@@ -659,7 +692,7 @@ class Huehueti:
 		#------- Build lists of variables grouped by use (source-level vs global) -----------
 		source_variables = list(filter(lambda x: (("Av" in x)
 											or ("log_lum" in x)
-											# or ("teff" in x)
+											or ("mass" in x)
 											or ("distance" in x)
 											or ("astrometry" in x)
 											or ("photometry" in x)
@@ -671,6 +704,7 @@ class Huehueti:
 											or (x == "distance_sd")
 											or ("nu" in x)
 											or ("alpha" in x)
+											or ("shift_scale" in x)
 											or ("astrometric_" in x)
 											or ("photometric_" in x)
 											or ("spectroscopic_" in x)
@@ -695,9 +729,9 @@ class Huehueti:
 		for var in tmp_sts_src:
 			if not (
 				(var == "Av") or
-				(var == "log_lum") or 
-				# (var == "tef") or 
 				(var == "distance") or
+				(var == "log_lum") or 
+				("mass" in var) or 
 				("astrometry" in var) or 
 				("photometry" in var) or
 				("spectroscopy" in var)
@@ -706,13 +740,13 @@ class Huehueti:
 
 		# Keep only relevant global statistics variables: age, distance central/dispersion and photometric hyperparams
 		for var in tmp_sts_glb:
-			if not (
-				("age" in var) or 
-				(var == "distance_mu") or 
-				(var == "distance_sd") or
-				("nu" in var) or
-				("alpha" in var) or
-				("photometric_" in var)
+			if not (("age" in var)
+				or (var == "distance_mu")
+				or (var == "distance_sd")
+				or (var == "shift_scale")
+				or ("nu" in var)
+				or ("alpha" in var)
+				or ("photometric_" in var)
 				):
 				global_sts_variables.remove(var)
 
@@ -721,6 +755,8 @@ class Huehueti:
 			if not (("age" in var)
 				or (var == "distance_mu")
 				or (var == "distance_sd")
+				or (var == "shift_nu") 
+				or (var == "shift_scale")
 				or ("nu" in var)
 				or ("alpha" in var)
 				or ("photometric_" in var)):
@@ -729,7 +765,7 @@ class Huehueti:
 		for var in tmp_prd:
 			if (
 				("astrometry" in var)
-				or ("photometry" in var)
+				or ("photometry" == var)
 				or ("spectroscopy" in var)
 				):
 				# keep (pass)
@@ -864,7 +900,7 @@ class Huehueti:
 				# Add readable units to axis labels where applicable
 				title = ax[0].get_title()
 				if "age" in title:
-					ax[0].set_xlabel("dex [age]")
+					ax[0].set_xlabel("Age [Myr]")
 				if "photometric_dispersion" in title:
 					ax[0].set_xlabel("magnitude")
 				#-----------------------------------------------------------
@@ -1086,113 +1122,113 @@ class Huehueti:
 		plt.savefig(file_plot,bbox_inches='tight',dpi=dpi)
 		plt.close(0)
 
-	def plot_hrd(self,
-		file_plot: Optional[str] = None,
-		figsize: Optional[tuple] = None,
-		magnitude: str = "phot_g_mean_mag",
-		n_samples: int = 10,
-		n_points: int = 100,
-		scatter_palette: str = "dark",
-		lines_color: str = "orange",
-		alpha: float = 1.0,
-		dpi: int = 600,
-	) -> None:
-		"""
-		Plot a Hertzprung-Russell diagram (HRD) showing observed points, predicted points,
-		and sampled isochrones drawn from the posterior distribution.
-		"""
-		print("Plotting HRD ...")
+	# def plot_hrd(self,
+	# 	file_plot: Optional[str] = None,
+	# 	figsize: Optional[tuple] = None,
+	# 	magnitude: str = "phot_g_mean_mag",
+	# 	n_samples: int = 10,
+	# 	n_points: int = 100,
+	# 	scatter_palette: str = "dark",
+	# 	lines_color: str = "orange",
+	# 	alpha: float = 1.0,
+	# 	dpi: int = 600,
+	# ) -> None:
+	# 	"""
+	# 	Plot a Hertzprung-Russell diagram (HRD) showing observed points, predicted points,
+	# 	and sampled isochrones drawn from the posterior distribution.
+	# 	"""
+	# 	print("Plotting HRD ...")
 
-		msg_n = "The required n_samples {0} is larger than those in the posterior.".format(n_samples)
+	# 	msg_n = "The required n_samples {0} is larger than those in the posterior.".format(n_samples)
 
-		# Ensure we have enough posterior draws to sample unique ages.
-		assert n_samples <= self.ds_posterior.sizes["draw"], msg_n
+	# 	# Ensure we have enough posterior draws to sample unique ages.
+	# 	assert n_samples <= self.ds_posterior.sizes["draw"], msg_n
 
-		#----- Draw ages from posterior and prepare a theta grid used by MLP -----------
-		#----- Draw ages from posterior and prepare a theta grid used by MLP -----------
-		ages = np.random.choice(self.trace.posterior["age"].values.flatten(),
-					size=n_samples,replace=False)
-		# Use mean distance from posterior for converting absolute->apparent.
-		distance = np.mean(self.trace.posterior["distance"].values.flatten())
-		log_lums = np.linspace(self.mlp_phot.domain["logL"][0],self.mlp_phot.domain["logL"][1],n_points)
-		log_tefs = np.linspace(self.mlp_phot.domain["logTe"][0],self.mlp_phot.domain["logTe"][1],n_points)
+	# 	#----- Draw ages from posterior and prepare a theta grid used by MLP -----------
+	# 	#----- Draw ages from posterior and prepare a theta grid used by MLP -----------
+	# 	ages = np.random.choice(self.trace.posterior["age"].values.flatten(),
+	# 				size=n_samples,replace=False)
+	# 	# Use mean distance from posterior for converting absolute->apparent.
+	# 	distance = np.mean(self.trace.posterior["distance"].values.flatten())
+	# 	log_lums = np.linspace(self.mlp_phot.domain["logL"][0],self.mlp_phot.domain["logL"][1],n_points)
+	# 	log_tefs = np.linspace(self.mlp_phot.domain["logTe"][0],self.mlp_phot.domain["logTe"][1],n_points)
 
-		dfs_smp = []
-		# For each sampled age, query MLP to produce absolute photometry and convert to apparent.
-		for age in ages:
-			absolute_photometry = self.mlp_phot(np.log10(age*1.e6),log_lums,log_tefs,n_points)
-			photometry = absolute_to_apparent(absolute_photometry,distance)
-			df_tmp = pn.DataFrame(
-					data=photometry.eval(),
-					columns=self.observables["photometry"])
-			# The sampled isochrone points are indexed by star and age for plotting.
-			df_tmp.index.name = "star"
-			df_tmp["age"] = age
-			df_tmp["log_lum"] = log_lums
-			df_tmp["log_tef"] = log_tefs
-			df_tmp.set_index("age",append=True,inplace=True)
-			dfs_smp.append(df_tmp)
-		df_smp = pn.concat(dfs_smp,ignore_index=False)
-		#------------------------------------------------------------------------------
+	# 	dfs_smp = []
+	# 	# For each sampled age, query MLP to produce absolute photometry and convert to apparent.
+	# 	for age in ages:
+	# 		absolute_photometry = self.mlp_phot(np.log10(age*1.e6),log_lums,log_tefs,n_points)
+	# 		photometry = absolute_to_apparent(absolute_photometry,distance)
+	# 		df_tmp = pn.DataFrame(
+	# 				data=photometry.eval(),
+	# 				columns=self.observables["photometry"])
+	# 		# The sampled isochrone points are indexed by star and age for plotting.
+	# 		df_tmp.index.name = "star"
+	# 		df_tmp["age"] = age
+	# 		df_tmp["log_lum"] = log_lums
+	# 		df_tmp["log_tef"] = log_tefs
+	# 		df_tmp.set_index("age",append=True,inplace=True)
+	# 		dfs_smp.append(df_tmp)
+	# 	df_smp = pn.concat(dfs_smp,ignore_index=False)
+	# 	#------------------------------------------------------------------------------
 
-		#-------------- Photometric data: compute posterior predicted mean per source -------
-		df_pht = self.trace.posterior["photometry"].to_dataframe().unstack("photometry_names")
-		df_pht.columns = df_pht.columns.droplevel(level=0)
-		df_pht = df_pht.groupby("source_id").mean()
-		#----------------------------------------------------------------------------------------
+	# 	#-------------- Photometric data: compute posterior predicted mean per source -------
+	# 	df_pht = self.trace.posterior["photometry"].to_dataframe().unstack("photometry_names")
+	# 	df_pht.columns = df_pht.columns.droplevel(level=0)
+	# 	df_pht = df_pht.groupby("source_id").mean()
+	# 	#----------------------------------------------------------------------------------------
 
-		#-------------- Spectroscopic data: compute posterior predicted mean per source -------
-		df_spc = self.trace.posterior["spectroscopy"].to_dataframe().unstack("spectroscopy_names")
-		df_spc.columns = df_spc.columns.droplevel(level=0)
-		df_spc = df_spc.groupby("source_id").mean()
-		#----------------------------------------------------------------------------------------
+	# 	#-------------- Spectroscopic data: compute posterior predicted mean per source -------
+	# 	df_spc = self.trace.posterior["spectroscopy"].to_dataframe().unstack("spectroscopy_names")
+	# 	df_spc.columns = df_spc.columns.droplevel(level=0)
+	# 	df_spc = df_spc.groupby("source_id").mean()
+	# 	#----------------------------------------------------------------------------------------
 
-		#---------------- Color and magnitude  ------------------------
-		# Use a set to avoid duplicated columns if magnitude also in color list
-		columns = [magnitude,"log_tef"]
-		#--------------------------------------------------------------
+	# 	#---------------- Color and magnitude  ------------------------
+	# 	# Use a set to avoid duplicated columns if magnitude also in color list
+	# 	columns = [magnitude,"log_tef"]
+	# 	#--------------------------------------------------------------
 
-		#---------- Dataframes ------------------
-		df_obs = self.data.loc[:,columns].copy()
-		df_prd = df_pht.join(df_spc).loc[:,columns].copy()
-		df_smp = df_smp.loc[:,columns].copy()
-		#-----------------------------------------
+	# 	#---------- Dataframes ------------------
+	# 	df_obs = self.data.loc[:,columns].copy()
+	# 	df_prd = df_pht.join(df_spc).loc[:,columns].copy()
+	# 	df_smp = df_smp.loc[:,columns].copy()
+	# 	#-----------------------------------------
 
-		#------------------- Concatenate observed and predicted for common scatter plotting -----------------
-		df_obs["Origin"] = "Observed"
-		df_prd["Origin"] = "Predicted"
-		df_all = pn.concat([df_obs,df_prd],
-					ignore_index=True) #Otherwise seaborn scatterplot may trip on duplicated indices
-		#------------------------------------------
+	# 	#------------------- Concatenate observed and predicted for common scatter plotting -----------------
+	# 	df_obs["Origin"] = "Observed"
+	# 	df_prd["Origin"] = "Predicted"
+	# 	df_all = pn.concat([df_obs,df_prd],
+	# 				ignore_index=True) #Otherwise seaborn scatterplot may trip on duplicated indices
+	# 	#------------------------------------------
 
-		file_plot = file_plot if (file_plot is not None) else self.file_hrd
-		#----------------- Produce CMD --------------------------------------------
-		plt.figure(0,figsize=figsize)
-		ax = sns.scatterplot(data=df_all,
-						x="log_tef",
-						y=magnitude,
-						palette=sns.color_palette(scatter_palette,n_colors=2),
-						hue="Origin",
-						style="Origin",
-						s=10,
-						zorder=0)
-		# Overplot sampled isochrone lines colored by age (but not showing legend)
-		sns.lineplot(data=df_smp,
-						x="log_tef",
-						y=magnitude,
-						palette=sns.color_palette([lines_color], n_samples),
-						hue="age",
-						legend=False,
-						alpha=alpha,
-						sort=False,
-						zorder=1,
-						ax=ax)
-		ax.set_xlabel("log Teff [dex]")
-		ax.set_ylabel("{0} {1}".format(magnitude,"[mag]"))
-		ax.invert_yaxis()  # Magnitudes increase downward in plots
-		ax.set_title("Apparent photometry")
-		plt.savefig(file_plot,bbox_inches='tight',dpi=dpi)
-		plt.close(0)
+	# 	file_plot = file_plot if (file_plot is not None) else self.file_hrd
+	# 	#----------------- Produce CMD --------------------------------------------
+	# 	plt.figure(0,figsize=figsize)
+	# 	ax = sns.scatterplot(data=df_all,
+	# 					x="log_tef",
+	# 					y=magnitude,
+	# 					palette=sns.color_palette(scatter_palette,n_colors=2),
+	# 					hue="Origin",
+	# 					style="Origin",
+	# 					s=10,
+	# 					zorder=0)
+	# 	# Overplot sampled isochrone lines colored by age (but not showing legend)
+	# 	sns.lineplot(data=df_smp,
+	# 					x="log_tef",
+	# 					y=magnitude,
+	# 					palette=sns.color_palette([lines_color], n_samples),
+	# 					hue="age",
+	# 					legend=False,
+	# 					alpha=alpha,
+	# 					sort=False,
+	# 					zorder=1,
+	# 					ax=ax)
+	# 	ax.set_xlabel("log Teff [dex]")
+	# 	ax.set_ylabel("{0} {1}".format(magnitude,"[mag]"))
+	# 	ax.invert_yaxis()  # Magnitudes increase downward in plots
+	# 	ax.set_title("Apparent photometry")
+	# 	plt.savefig(file_plot,bbox_inches='tight',dpi=dpi)
+	# 	plt.close(0)
 
 	
 	def save_statistics(self,
@@ -1212,7 +1248,7 @@ class Huehueti:
 		#-------------- Source statistics ----------------------------
 		dfs = []
 		for case in self.source_sts_variables:
-			if case in ["distance","log_lum","tef","Av"]:
+			if case in ["distance","log_lum","mass","mass_secondary","mass_ratio","Av"]:
 				df_tmp  = az.summary(self.ds_posterior,
 							var_names=case,
 							stat_focus = stat_focus,
@@ -1258,6 +1294,22 @@ class Huehueti:
 					df_tmp = df_tmp.stack(sort=False,future_stack=False)
 					df_tmp = df_tmp.rename_axis(index=[self.id_name,"statistic"])
 					dfs.append(df_tmp)
+			elif case == "shift_photometry":
+				for var in self.observables["photometry"]:
+					df_tmp  = az.summary(self.ds_posterior,
+								var_names=case,
+								coords={"photometry_names":var},
+								stat_focus = stat_focus,
+								hdi_prob=hdi_prob,
+								round_to=5,
+								extend=True,
+								kind=kind
+								)
+					df_tmp.set_index(self.ID,inplace=True)
+					df_tmp.columns = pn.MultiIndex.from_product([["shift_"+var], df_tmp.columns])
+					df_tmp = df_tmp.stack(sort=False,future_stack=False)
+					df_tmp = df_tmp.rename_axis(index=[self.id_name,"statistic"])
+					dfs.append(df_tmp)
 			else:
 				sys.exit("Unrecognized case: {0}".format(case))
 
@@ -1283,35 +1335,47 @@ if __name__ == "__main__":
 	# Example run when executed as a script. These defaults assume a certain
 	# directory layout (data/, mlps/, outputs/) relative to the current working dir.
 
-	model = "outliers"
-	case = "Optuna_logAge_logL_epochs_5e+02_0.1myr"
-	age,distance,n_stars,seed = 20,50,15,4
-	dir_base    = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/20-220Myr/{0}/".format(model)
-	dir_mlps    = "/home/jolivares/Models/PARSEC/20-220Myr/"
+	model = "binaries+dispersion"
+
+	age_range = "200-600Myr"
+	trials = 50
+	epochs = 500
+
+	case = "Optuna_InverseTimeDecay_epochs_{0:1.0e}_trials_{1}_0.5myr".format(epochs,trials)
+	age,distance,n_stars,seed = 250,100,15,0
+	init_method = "fullrank_advi"
+	init_iters = int(5e5)
+
+
+	dir_base = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/{0}/{1}/".format(age_range,model)
+	dir_mlps = "/home/jolivares/Models/PARSEC/{0}/".format(age_range)
 
 	dir_inputs  = dir_base + "inputs/"
-	dir_outputs = dir_base + case + "_l2_FullRankADVI_test/"
+	dir_outputs = dir_base + "{0}/".format(case)
 	base_name   = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 	file_data = dir_inputs  + base_name.format(age,distance,n_stars,seed)+".csv"
-	dir_out   = dir_outputs + base_name.format(age,distance,n_stars,seed)+"/"
+	dir_out   = dir_outputs + base_name.format(age,distance,n_stars,seed)+"_Gamma:1000/"
 	os.makedirs(dir_out,exist_ok=True)
+	print(dir_out)
 
 	files_mlps = {
-	"G_BPmag":dir_mlps + case + "/G_BPmag_l2/seed_0/mlp.pkl",
-	"Gmag":   dir_mlps + case + "/Gmag_l2/seed_0/mlp.pkl",
-	"G_RPmag":dir_mlps + case + "/G_RPmag_l2/seed_0/mlp.pkl"
+	"Phot":dir_mlps + case + "/l4/seed_0_wgt_1/mlp.pkl",
+	"Mini":dir_mlps + case + "/Mini_l4/seed_0/mlp.pkl",
+	"logL":dir_mlps + case + "/logL_l4/seed_0/mlp.pkl",
 	}
 
 	features = ["logAge","logL"]
 	absolute_photometry = ['G_BPmag','Gmag','G_RPmag']
 	observables = {
-	"photometry":[ 'BP','G', 'RP'],
-	"photometry_error":['e_BP','e_G',  'e_RP'],
-	# "photometry":['phot_g_mean_mag', 'phot_rp_mean_mag'],
-	# "photometry_error":['phot_g_mean_mag_error', 'phot_rp_mean_mag_error'],
+	# "photometry":[ 'BP','G', 'RP'],
+	# "photometry_error":['e_BP','e_G',  'e_RP'],
+	"photometry":['phot_bp_mean_mag','phot_g_mean_mag', 'phot_rp_mean_mag'],
+	"photometry_error":['phot_bp_mean_mag_error','phot_g_mean_mag_error', 'phot_rp_mean_mag_error'],
 	# "spectroscopy":["teff"],
 	# "spectroscopy_error":["teff_error"]
 	}
+	# cmd = {"magnitude":"G","color":["G","RP"]}
+	cmd = {"magnitude":'phot_g_mean_mag',"color":['phot_g_mean_mag','phot_rp_mean_mag']}
 
 	parameters = {"age":None}
 	hyperparameters = {"distance":"distance"}
@@ -1332,6 +1396,12 @@ if __name__ == "__main__":
 		"distance_sd":{
 			"family": "Exponential",
 			"scale" : 5.
+			},
+		"dispersion":{
+			"family": "Gamma",
+			# "family": "Exponential",
+			"beta" : 1000.,
+			# "lambda":100.0,
 			},
 		"extinction":{
 			"family": "Uniform",
@@ -1364,11 +1434,11 @@ if __name__ == "__main__":
 		prior = prior,
 		features=features
 		)
-	# hue.plot_pgm()
+	hue.plot_pgm()
 	hue.run(
-		init_method="fullrank_advi",
-		init_iters=int(5e5),
-		nuts_sampler="fullrank_advi",
+		init_method=init_method,
+		init_iters=init_iters,
+		nuts_sampler=init_method,
 		# nuts_sampler="numpyro",
 		tuning_iters=int(2e3),
 		sample_iters=int(2e3),
@@ -1380,6 +1450,6 @@ if __name__ == "__main__":
 	hue.plot_posterior()
 	hue.plot_cpp()
 	hue.plot_predictions()
-	hue.plot_cmd(cmd={"magnitude":"G","color":["G","RP"]})
+	hue.plot_cmd(cmd=cmd)
 	# hue.plot_hrd(magnitude="phot_g_mean_mag")
 	hue.save_statistics()

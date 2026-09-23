@@ -2,169 +2,56 @@ import os
 import numpy as np
 from Amasijo import Amasijo
 
-model      = "outliers"
-age_range  = "15-25Myr"
-max_Av     = 0.0
 
-dir_inputs = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/{0}/{1}/inputs/".format(age_range,model)
+
+# age_range = "15-25Myr"
+# age_range  = "20-220Myr"
+age_range  = "200-600Myr"
+# age_range  = "600-1000Myr"
+
+
+# age_step  = "0.025myr"
+# age_step   = "0.1myr"
+# age_step   = "0.5myr"
+age_step   = "1myr"
+
+max_Av     = 0.0
+seed_offset = 2322
+
+dir_base = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/{0}".format(age_range)
 base_name = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 
-if age_range == "15-25Myr":
-	list_of_ages = list(range(15,27,2))
+models = ["base","binaries","base+dispersion"] #,"linear_dispersion"]
+
+if age_range == "1-21Myr":
+	list_of_ages = list(range(1,22,1))
 elif age_range == "20-220Myr":
 	list_of_ages = list(range(20,240,20))
 elif age_range == "200-600Myr":
 	list_of_ages = list(range(200,650,50))
+elif age_range == "600-1000Myr":
+	list_of_ages = list(range(600,1100,100))
 else:
 	sys.exit("Undefined age range")
 
-list_of_distances = [50,100,200,400]
-list_of_n_stars   = [15,30,60]
+list_of_distances = [100,500]
+list_of_n_stars   = [15,30]
 list_of_seeds     = [0,1,2,3,4]
 
-def mass_limits(age,distance):
-	if distance == 50:
-		if age == 15:
-			return [0.,3.19]
-		elif age == 17:
-			return [0.,3.19]
-		elif age == 19:
-			return [0.,3.59]
-		elif age == 21:
-			return [0.,3.19]
-		elif age == 23:
-			return [0.,3.19]
-		elif age == 25:
-			return [0.,3.0]
-		elif age == 20:
-			return [0.,3.20]
-		elif age == 40:
-			return [0.,3.18]
-		elif age == 60:
-			return [0.,2.98]
-		elif age == 80:
-			return [0.,3.15]
-		elif age == 100:
-			return [0.,2.92]
-		elif age == 120:
-			return [0.,3.00]
-		elif age == 140:
-			return [0.,2.89]
-		elif age == 160:
-			return [0.,2.75]
-		elif age == 180:
-			return [0.,2.75]
-		elif age == 200:
-			return [0.,2.75]
-		elif age == 220:
-			return [0.,2.75]
-	elif distance == 100:
-		if age == 15:
-			return [0.,5.8]
-		elif age == 17:
-			return [0.,5.8]
-		elif age == 19:
-			return [0.,5.8]
-		elif age == 21:
-			return [0.,5.4]
-		elif age == 23:
-			return [0.,5.8]
-		elif age == 25:
-			return [0.,5.3]
-		elif age == 20:
-			return [0.,5.7]
-		elif age == 40:
-			return [0.,5.3]
-		elif age == 60:
-			return [0.,4.8]
-		elif age == 80:
-			return [0.,4.6]
-		elif age == 100:
-			return [0.,4.5]
-		elif age == 120:
-			return [0.,4.2]
-		elif age == 140:
-			return [0.,4.0]
-		elif age == 160:
-			return [0.,3.8]
-		elif age == 180:
-			return [0.,3.7]
-		elif age == 200:
-			return [0.,3.6]
-		elif age == 220:
-			return [0.,3.5]
-	elif distance == 200:
-		if age == 15:
-			return [0.,9.9]
-		elif age == 17:
-			return [0.,9.3]
-		elif age == 19:
-			return [0.,8.7]
-		elif age == 21:
-			return [0.,8.5]
-		elif age == 23:
-			return [0.,8.5]
-		elif age == 25:
-			return [0.,8.3]
-		elif age == 20:
-			return [0.,8.7]
-		elif age == 40:
-			return [0.,7.1]
-		elif age == 60:
-			return [0.,6.1]
-		elif age == 80:
-			return [0.,100.0]
-		elif age == 100:
-			return [0.,100.0]
-		elif age == 120:
-			return [0.,100.0]
-		elif age == 140:
-			return [0.,100.0]
-		elif age == 160:
-			return [0.,100.0]
-		elif age == 180:
-			return [0.,100.0]
-		elif age == 200:
-			return [0.,100.0]
-		elif age == 220:
-			return [0.,100.0]
-	elif distance == 400:
-		if age == 15:
-			return [0.,12.5]
-		elif age == 17:
-			return [0.,11.8]
-		elif age == 19:
-			return [0.,11.2]
-		elif age == 21:
-			return [0.,10.7]
-		elif age == 23:
-			return [0.,11.8]
-		elif age == 25:
-			return [0.,100.0]
-		elif age == 20:
-			return [0.,10.9]
-		elif age == 40:
-			return [0.,100.0]
-		elif age == 60:
-			return [0.,100.0]
-		elif age == 80:
-			return [0.,100.0]
-		elif age == 100:
-			return [0.,100.0]
-		elif age == 120:
-			return [0.,100.0]
-		elif age == 140:
-			return [0.,100.0]
-		elif age == 160:
-			return [0.1,100.0]
-		elif age == 180:
-			return [0.1,100.0]
-		elif age == 200:
-			return [0.1,100.0]
-		elif age == 220:
-			return [0.1,100.0]
+
+def binary_args(model):
+	if "binaries" in model:
+		enabled = True
 	else:
-		sys.exit("No available distance!")
+		enabled = False
+	
+	arguments = {
+				"enabled": enabled,
+				"binary_fraction": 0.5,
+				"q_distribution": "uniform",
+				"q_limits": (0.1, 1.0),
+				}
+	return arguments
 
 def phasespace_args(distance):
 	args = {
@@ -180,19 +67,28 @@ def phasespace_args(distance):
 				}}
 	return args
 
+def mass_limits(age_range):
+	if age_range == "1-21Myr":
+		return [1.1,20.]
+	elif age_range == "20-220Myr":
+		return [1.1,11.0]
+	elif age_range == "200-600Myr":
+		return [1.1,3.8]
+	else:
+		sys.exit("Undefined age range")
+
 def isochrones_args(age,distance):
 	args = {
 	"model":"PARSEC",
 	"age": float(age),
 	"Av_limits":[0.0,max_Av],
-	"mass_limits":mass_limits(age,distance),
+	"mass_limits":mass_limits(age_range),
 	"MIST_args":{
-		"metallicity":0.012,
+		"metallicity":0.0152,
 		},
 	"PARSEC_args":{
 		"files":[
-		"/home/jolivares/Models/PARSEC/{0}/Gaia_EDR3_0.025myr.dat".format(age_range),
-		"/home/jolivares/Models/PARSEC/{0}/2MASS_0.025myr.dat".format(age_range),
+		"/home/jolivares/Models/PARSEC/{0}/Gaia_EDR3+2MASS_{1}_no-turn.csv".format(age_range,age_step)
 		],
 		"max_label":1,
 		"bands_wavelengths":[6217.6,5109.7,7769.0,12350.,16620.,21590.], # Same order as bands
@@ -203,25 +99,28 @@ def isochrones_args(age,distance):
 	}
 	return args
 
+for model in models:
+	dir_inputs = "{0}/{1}/inputs/".format(dir_base,model)
+	os.makedirs(dir_inputs,exist_ok=True)
 
-os.makedirs(dir_inputs,exist_ok=True)
+	for age in list_of_ages:
+		print(10*"-"+" "+str(age)+" "+"-"*10)
+		for distance in list_of_distances:
+			for n_stars in list_of_n_stars:
+				for seed in list_of_seeds:
+					file_data = dir_inputs + base_name.format(age,distance,n_stars,seed) + ".csv"
+					file_plot = dir_inputs + base_name.format(age,distance,n_stars,seed) + ".pdf"
 
-for age in list_of_ages:
-	for distance in list_of_distances:
-		for n_stars in list_of_n_stars:
-			for seed in list_of_seeds:
-				file_data = dir_inputs + base_name.format(age,distance,n_stars,seed) + ".csv"
-				file_plot = dir_inputs + base_name.format(age,distance,n_stars,seed) + ".pdf"
+					if os.path.isfile(file_data):
+						continue
 
-				if os.path.isfile(file_data):
-					continue
-
-				ama = Amasijo(
-							phasespace_args=phasespace_args(distance),
-							isochrones_args=isochrones_args(age,distance),
-							seed=seed)
-				ama.generate_cluster(file_data,
-							n_stars=n_stars,
-							angular_correlations=None)
-				# ama.plot_cluster(
-				# 			file_plot=file_plot)
+					ama = Amasijo(
+								phasespace_args=phasespace_args(distance),
+								isochrones_args=isochrones_args(age,distance),
+								binary_args= binary_args(model),
+								seed=seed+seed_offset)
+					ama.generate_cluster(file_data,
+								n_stars=n_stars,
+								angular_correlations=None)
+					# ama.plot_cluster(
+					# 			file_plot=file_plot)

@@ -11,43 +11,40 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from scipy.optimize import curve_fit
 from mlp_model import create_custom_model, compile_model, evaluate_gradient,learning_rate_scheduler
+from mlp_model import analyze_residuals
 
 os.environ["PYTHONHASHSEED"] = "42"
 # os.environ["TF_DETERMINISTIC_OPS"] = "1"
-os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
 
-age_range = "11-21Myr"
-age_step = "0.025myr"
-
-# age_range = "20-220Myr"
-# age_step = "0.1myr"
-
+# age_range = "1-21Myr"
+# age_range = "11-21Myr"
+age_range = "20-220Myr"
 # age_range = "200-600Myr"
-# age_step = "0.5myr"
-
 # age_range = "600-1000Myr"
+
+# age_step = "0.025myr"
+# age_step = "0.05myr"
+age_step = "0.1myr"
+# age_step = "0.1amyr"
+# age_step = "0.5myr"
 # age_step = "1myr"
 
 
 #------------- Input data ---------------------------
 max_label = 1 # label >1 are evolved stars that we do not need
-target = "Mini"
-covariate = "logL"
-
-# covariate = "Mini"
-# target = "logL"
-
-features = ["logAge",covariate]
+features = ["logAge","logL"]
+targets = ["G_BPmag","Gmag","G_RPmag"]
 n_features = len(features)
-n_targets = 1
+n_targets = len(targets)
 #----------------------------------------------------
 
 # --------------- Model properties --------------------------------
-list_of_num_layers = [3] # Number of hidden layers
+list_of_num_layers = [5]# Number of hidden layers
 seeds = [0] # Seeds for the MLP initializers
 activation_layers = "sigmoid" # Activation functions for each hidden layer
 activation_output = "linear"  # Activation function for the output layer
@@ -73,126 +70,21 @@ clipnorm = 1.0 # The norm of the gradients does not goes larger than this value
 validation_split = 0.2 # 20% of dataset used for validation
 seed_split = 0
 verbose = 0
+critical_weight = 1.0
+logL_crw_lower = 0.2
+logL_crw_upper = 1.2
 #------------------------------------------------------------------
-
-
-#----------------- Domain of tuned parameters -------------------------
-dict_btsz   = {}
-dict_lysz   = {}
-dict_lr_dcr = {}
-dict_lr_itl = {}
-
-match target:
-	case "Mini":
-		match age_range:
-			case "11-21Myr":
-
-				#------------------ 3 layers ---------------------------
-				dict_btsz[3]   = {"value":None,"low":1,"high":200}
-				dict_lysz[3]   = {"value":None,"low":10,"high":200}
-				dict_lr_dcr[3] = {"value":None,"low":1e-3,"high":5e-1}
-				dict_lr_itl[3] = {"value":None,"low":1e-3,"high":1e-1}
-				#-------------------------------------------------------
-
-				#------------------ 4 layers ---------------------------
-				dict_btsz[4]   = {"value":None,"low":1,"high":200}
-				dict_lysz[4]   = {"value":None,"low":10,"high":200}
-				dict_lr_dcr[4] = {"value":None,"low":1e-3,"high":5e-1}
-				dict_lr_itl[4] = {"value":None,"low":1e-3,"high":1e-1}
-				#-------------------------------------------------------
-
-			case "20-220Myr":
-
-				#------------------ 3 layers ---------------------------
-				dict_btsz[3]   = {"value":None,"low":10,"high":250}
-				dict_lysz[3]   = {"value":None,"low":10,"high":150}
-				dict_lr_dcr[3] = {"value":None,"low":1e-3,"high":4e-1}
-				dict_lr_itl[3] = {"value":None,"low":1e-2,"high":12e-2}
-				#-------------------------------------------------------
-
-				#------------------ 4 layers ---------------------------
-				dict_btsz[4]   = {"value":None,"low":1,"high":200}
-				dict_lysz[4]   = {"value":None,"low":50,"high":200}
-				dict_lr_dcr[4] = {"value":None,"low":1e-3,"high":5e-1}
-				dict_lr_itl[4] = {"value":None,"low":1e-3,"high":7e-2}
-				#-------------------------------------------------------
-
-			case "200-600Myr":
-
-				#------------------ 3 layers ---------------------------
-				dict_btsz[3]   = {"value":None,"low":50,"high":150}
-				dict_lysz[3]   = {"value":None,"low":10,"high":120}
-				dict_lr_dcr[3] = {"value":None,"low":1e-3,"high":1.0}
-				dict_lr_itl[3] = {"value":None,"low":1e-3,"high":0.11}
-				#-------------------------------------------------------
-
-				#------------------ 4 layers ---------------------------
-				dict_btsz[4]   = {"value":None,"low":10,"high":100}
-				dict_lysz[4]   = {"value":None,"low":10,"high":100}
-				dict_lr_dcr[4] = {"value":None,"low":1e-3,"high":1.0}
-				dict_lr_itl[4] = {"value":None,"low":1e-3,"high":9e-2}
-				#-------------------------------------------------------
-
-				#------------------ 2 layers ---------------------------
-				dict_btsz[5]   = {"value":None,"low":50,"high":150}
-				dict_lysz[5]   = {"value":None,"low":100,"high":200}
-				dict_lr_dcr[5] = {"value":None,"low":1e-3,"high":7e-1}
-				dict_lr_itl[5] = {"value":None,"low":1e-3,"high":9e-2}
-				#-------------------------------------------------------
-	case "logL":
-		match age_range:
-			case "20-220Myr":
-
-				#------------------ 3 layers ---------------------------
-				dict_btsz[3]   = {"value":None,"low":1,"high":200}
-				dict_lysz[3]   = {"value":None,"low":10,"high":200}
-				dict_lr_dcr[3] = {"value":None,"low":1e-3,"high":3e-1}
-				dict_lr_itl[3] = {"value":None,"low":1e-3,"high":1e-1}
-				#-------------------------------------------------------
-
-				#------------------ 4 layers ---------------------------
-				dict_btsz[4]   = {"value":None,"low":25,"high":100}
-				dict_lysz[4]   = {"value":None,"low":10,"high":150}
-				dict_lr_dcr[4] = {"value":None,"low":1e-3,"high":3e-1}
-				dict_lr_itl[4] = {"value":None,"low":1e-3,"high":5e-2}
-				#-------------------------------------------------------
-
-			case "200-600Myr":
-
-				#------------------ 3 layers ---------------------------
-				dict_btsz[3]   = {"value":None,"low":50,"high":150}
-				dict_lysz[3]   = {"value":None,"low":10,"high":120}
-				dict_lr_dcr[3] = {"value":None,"low":1e-3,"high":1.0}
-				dict_lr_itl[3] = {"value":None,"low":1e-3,"high":0.11}
-				#-------------------------------------------------------
-
-				#------------------ 4 layers ---------------------------
-				dict_btsz[4]   = {"value":None,"low":10,"high":100}
-				dict_lysz[4]   = {"value":None,"low":10,"high":100}
-				dict_lr_dcr[4] = {"value":None,"low":1e-3,"high":1.0}
-				dict_lr_itl[4] = {"value":None,"low":1e-3,"high":9e-2}
-				#-------------------------------------------------------
-
-				#------------------ 2 layers ---------------------------
-				dict_btsz[5]   = {"value":None,"low":50,"high":150}
-				dict_lysz[5]   = {"value":None,"low":100,"high":200}
-				dict_lr_dcr[5] = {"value":None,"low":1e-3,"high":7e-1}
-				dict_lr_itl[5] = {"value":None,"low":1e-3,"high":9e-2}
-				#-------------------------------------------------------
-
-#-----------------------------------------------------------------------------
-
 
 #--------------- Directories and files ---------------------------------------------
 dir_base  = "/home/jolivares/Models/PARSEC/{0}/".format(age_range)
-# dir_base  = "/home/jolivares/Models/PARSEC@phanocles/{0}/".format(age_range)
 # Remove the # from the row contain the header in the input file
 file_iso  = dir_base + "Gaia_EDR3_{0}.dat".format(age_step) # Input file
 dir_mlps  = dir_base + "Optuna_{0}_epochs_{1:1.0e}_trials_{2}_{3}/".format(
 lr_decay_function,epochs,optimization_trials,age_step)
-file_mtr  = dir_mlps + "Metric_{0}.png"
-file_grd  = dir_mlps + "Gradient_{0}.png"
-base_fld  = "{0}_l{1}/"
+file_mtrs  = dir_mlps + "Metrics.png"
+file_grds  = dir_mlps + "Gradients.png"
+base_fld  = "l{0}"+ "/" #"_logL<4.3_wgt_{0}_{1}-{2}/".format(critical_weight,logL_crw_lower,logL_crw_upper)
+base_sed  = "seed_{0}/"
 base_dat  = "{0}data.csv"
 base_fit  = "{0}fit.csv"
 base_grd  = "{0}gradients.csv"
@@ -204,7 +96,121 @@ base_plt_prm  = "{0}study_params.png"
 base_plt_lss  = "{0}loss.png"
 base_plt_mtr  = "{0}metric.png"
 base_plt_grd  = "{0}gradients.png"
+base_res      = "{0}residuals.csv"
+base_plt_res  = "{0}residuals.png"
+base_plt_res2d = "{0}residuals2d.png"
 #------------------------------------------------------------------------------------
+#----------------- Domain of tuned parameters -------------------------
+dict_btsz   = {}
+dict_lysz   = {}
+dict_lr_dcr = {}
+dict_lr_itl = {}
+
+match age_range:
+	case "1-21Myr":
+
+		#------------------ 3 layers -------------------------
+		dict_btsz[3]   = {"value":None,"low":1,"high":100}
+		dict_lysz[3]   = {"value":None,"low":50,"high":150}
+		dict_lr_dcr[3] = {"value":None,"low":1e-3,"high":5e-2}
+		dict_lr_itl[3] = {"value":None,"low":1e-3,"high":4e-2}
+		#-----------------------------------------------------
+
+		#------------------ 4 layers -------------------------
+		dict_btsz[4]   = {"value":None,"low":1,"high":150}
+		dict_lysz[4]   = {"value":None,"low":10,"high":200}
+		dict_lr_dcr[4] = {"value":None,"low":1e-3,"high":1e-1}
+		dict_lr_itl[4] = {"value":None,"low":1e-3,"high":5e-2}
+		#-----------------------------------------------------
+
+		#------------------ 5 layers -------------------------
+		dict_btsz[5]   = {"value":None,"low":80,"high":200}
+		dict_lysz[5]   = {"value":None,"low":100,"high":300}
+		dict_lr_dcr[5] = {"value":None,"low":1e-3,"high":3e-1}
+		dict_lr_itl[5] = {"value":None,"low":1e-3,"high":2e-2}
+		#-----------------------------------------------------
+
+	case "11-21Myr":
+
+		#------------------ 3 layers -------------------------
+		dict_btsz[3]   = {"value":None,"low":1,"high":50}
+		dict_lysz[3]   = {"value":None,"low":100,"high":300}
+		dict_lr_dcr[3] = {"value":None,"low":3e-2,"high":8e-2}
+		dict_lr_itl[3] = {"value":None,"low":1e-3,"high":2e-2}
+		#-----------------------------------------------------
+
+		#------------------ 4 layers -------------------------
+		dict_btsz[4]   = {"value":None,"low":1,"high":50}
+		dict_lysz[4]   = {"value":None,"low":100,"high":300}
+		dict_lr_dcr[4] = {"value":None,"low":1e-3,"high":1e-1}
+		dict_lr_itl[4] = {"value":None,"low":1e-3,"high":3e-2}
+		#-----------------------------------------------------
+
+		#------------------ 5 layers -------------------------
+		dict_btsz[5]   = {"value":None,"low":1,"high":50}
+		dict_lysz[5]   = {"value":None,"low":100,"high":200}
+		dict_lr_dcr[5] = {"value":None,"low":5e-2,"high":15e-2}
+		dict_lr_itl[5] = {"value":None,"low":1e-3,"high":2e-2}
+		#-----------------------------------------------------
+
+		#------------------ 6 layers -------------------------
+		dict_btsz[6]   = {"value":None,"low":1,"high":100}
+		dict_lysz[6]   = {"value":None,"low":100,"high":300}
+		dict_lr_dcr[6] = {"value":None,"low":5e-2,"high":2e-1}
+		dict_lr_itl[6] = {"value":None,"low":1e-4,"high":1e-2}
+		#-----------------------------------------------------
+
+	case "20-220Myr":
+
+		#------------------ 3 layers -------------------------
+		dict_btsz[3]   = {"value":None,"low":10,"high":150}
+		dict_lysz[3]   = {"value":None,"low":10,"high":300}
+		dict_lr_dcr[3] = {"value":None,"low":1e-3,"high":2e-1}
+		dict_lr_itl[3] = {"value":None,"low":1e-3,"high":5e-2}
+		#-----------------------------------------------------
+
+		#------------------ 4 layers -------------------------
+		dict_btsz[4]   = {"value":None,"low":10,"high":200}
+		dict_lysz[4]   = {"value":None,"low":100,"high":300}
+		dict_lr_dcr[4] = {"value":None,"low":1e-3,"high":4e-1}
+		dict_lr_itl[4] = {"value":None,"low":1e-3,"high":3e-2}
+		#-----------------------------------------------------
+
+		#------------------ 5 layers -------------------------
+		dict_btsz[5]   = {"value":None,"low":10,"high":150}
+		dict_lysz[5]   = {"value":None,"low":100,"high":250}
+		dict_lr_dcr[5] = {"value":None,"low":1e-3,"high":5e-1}
+		dict_lr_itl[5] = {"value":None,"low":1e-3,"high":3e-2}
+		#-----------------------------------------------------
+
+	case "200-600Myr":
+
+		#------------------ 3 layers -------------------------
+		dict_btsz[3]   = {"value":None,"low":2,"high":100}
+		dict_lysz[3]   = {"value":None,"low":10,"high":200}
+		dict_lr_dcr[3] = {"value":None,"low":1e-1,"high":4e-1}
+		dict_lr_itl[3] = {"value":None,"low":5e-3,"high":3e-2}
+		#-----------------------------------------------------
+
+		#------------------ 4 layers -------------------------
+		dict_btsz[4]   = {"value":None,"low":10,"high":100}
+		dict_lysz[4]   = {"value":None,"low":10,"high":200}
+		dict_lr_dcr[4] = {"value":None,"low":1e-2,"high":3e-1}
+		dict_lr_itl[4] = {"value":None,"low":1e-3,"high":2e-2}
+		#-----------------------------------------------------
+
+		#------------------ 5 layers -------------------------
+		dict_btsz[5]   = {"value":None,"low":10,"high":100}
+		dict_lysz[5]   = {"value":None,"low":10,"high":200}
+		dict_lr_dcr[5] = {"value":None,"low":1e-2,"high":7e-1}
+		dict_lr_itl[5] = {"value":None,"low":1e-3,"high":2e-2}
+		#-----------------------------------------------------
+
+
+	
+
+#-----------------------------------------------------------------------------
+
 os.makedirs(dir_mlps,exist_ok=True)
 
 #------------- Load data ----------------------------
@@ -214,7 +220,7 @@ df_iso = pd.read_csv(file_iso,
 					header="infer",
 					comment="#")
 df_iso = df_iso.loc[df_iso["label"]<= max_label]
-df_iso = df_iso.loc[:,sum([features,[target]],[])]
+df_iso = df_iso.loc[:,sum([features,targets],[])]
 if age_range == "11-21Myr":
 	df_iso = df_iso.loc[df_iso["logL"] < 4.3]
 print(df_iso.describe())
@@ -223,7 +229,7 @@ df_idx.set_index(features,inplace=True)
 #--------------------------------------------------
 
 #----------------------- Domains ------------------------------------
-phot_min = df_iso[[target]].min()
+phot_min = df_iso[targets].min()
 domain = {}
 for feature in features:
 	domain[feature] = [df_iso[feature].min(),df_iso[feature].max()]
@@ -235,8 +241,8 @@ y_max = []
 y_min = []
 for log_age,tmp in df_iso.groupby("logAge").__iter__():
 	x.append(log_age)
-	y_max.append(tmp[covariate].max())
-	y_min.append(tmp[covariate].min())
+	y_max.append(tmp["logL"].max())
+	y_min.append(tmp["logL"].min())
 
 x = np.array(x)
 y_max = np.array(y_max)
@@ -244,34 +250,28 @@ y_min = np.array(y_min)
 
 def linear(x,a,b):
 	return a*x + b
+logL_upper_par,_ = curve_fit(linear,xdata=x,ydata=y_max)
+logL_lower_par,_ = curve_fit(linear,xdata=x,ydata=y_min)
 
-def quadratic(x,a,b,c):
-	return a*(x*x) + b*x +c
-
-function = linear if covariate == "logL" else quadratic
-
-covariate_upper_par,_ = curve_fit(function,xdata=x,ydata=y_max)
-covariate_lower_par,_ = curve_fit(function,xdata=x,ydata=y_min)
-
-# print(covariate_lower_par)
-# print(covariate_upper_par)
-# print(function(8.5,*covariate_lower_par),function(8.5,*covariate_upper_par))
+# print(logL_lower_par)
+# print(logL_upper_par)
+# print(linear(8.5,*logL_lower_par),linear(8.5,*logL_upper_par))
 
 # plt.scatter(x,y_min,s=2,c="black")
 # plt.scatter(x,y_max,s=2,c="black")
-# plt.plot(x,function(x,*covariate_lower_par),c="red",lw=2)
-# plt.plot(x,function(x,*covariate_upper_par),c="red",lw=2)
+# plt.plot(x,linear(x,*logL_lower_par),c="red",lw=2)
+# plt.plot(x,linear(x,*logL_upper_par),c="red",lw=2)
 # plt.show()
 # sys.exit()
 #-----------------------------------------------------------------
 
 #------------------- Sample weight ---------------------------------
-variable = df_iso[features[1]].to_numpy()
-hist, edges = np.histogram(variable, bins=100)
-bin_ids = np.digitize(variable, edges[:-1])
-weights = 1 / hist[bin_ids-1]
+# variable = df_iso[features[1]].to_numpy()
+# hist, edges = np.histogram(variable, bins=100)
+# bin_ids = np.digitize(variable, edges[:-1])
+# weights = 1 / hist[bin_ids-1]
 # sample_weight = weights/np.mean(weights)
-sample_weight = np.ones_like(weights)
+# sample_weight = np.ones_like(weights)
 # print(np.sum(sample_weight))
 # print(sample_weight.shape)
 # print(sample_weight.min(),sample_weight.max())
@@ -281,10 +281,28 @@ sample_weight = np.ones_like(weights)
 # 	color="tab:green",stat="density",bins=200,element="step",fill=False)
 # plt.show()
 # sys.exit()
+sample_weight = np.ones(len(df_iso))
+
+# critical = (
+#     # (df_iso["logAge"] < 7.6) &
+#     (
+#     # 	(df_iso["logL"] > -1.5) &
+#     # 	(df_iso["logL"] < 0.7)
+#     # ) | (df_iso["logL"] > 2.5)
+#     (df_iso["logL"] > -1) &
+#     	(df_iso["logL"] < 1.0)
+#     ) | (df_iso["logL"] > 4.0)
+# )
+
+critical = (
+    (df_iso["logL"] > logL_crw_lower) | (df_iso["logL"] < logL_crw_upper)
+)
+
+sample_weight[critical] = critical_weight
 #---------------------------------------------------------------------------------------
 
 #------- Transformations standardize inputs and outputs --------------------
-def forward_transform(df_ori,mu,sd):
+def forward_transform(df_ori,mu,sd,features):
 	df_trn = df_ori.copy()
 	# for col in df_trn.columns:
 	for col in features:
@@ -292,7 +310,7 @@ def forward_transform(df_ori,mu,sd):
 
 	return df_trn
 
-def backward_transform(df_trn,mu,sd):
+def backward_transform(df_trn,mu,sd,features):
 	df_ori = df_trn.copy()
 	# for col in df_ori.columns:
 	for col in features:
@@ -302,15 +320,15 @@ def backward_transform(df_trn,mu,sd):
 
 iso_mu = df_iso.mean(axis=0)
 iso_sd = df_iso.std(axis=0)
-df_trn = forward_transform(df_iso,iso_mu,iso_sd)
-# df_new = backward_transform(df_trn,iso_mu,iso_sd)
+df_trn = forward_transform(df_iso,iso_mu,iso_sd,features=features)
+# df_new = backward_transform(df_trn,iso_mu,iso_sd,features=features)
 # pd.testing.assert_frame_equal(df_iso,df_new)
 #-------------------------------------------------------------------
 
 #-------------- Split dataset --------------------------------------
 x_train, x_val, y_train, y_val, w_train, w_val = train_test_split(
 							df_trn.loc[:,features],
-							df_trn.loc[:,[target]],
+							df_trn.loc[:,targets],
 							sample_weight,
 							test_size=validation_split,
 							random_state=seed_split
@@ -321,9 +339,10 @@ x_train, x_val, y_train, y_val, w_train, w_val = train_test_split(
 mtrs = []
 for num_layers in list_of_num_layers:
 	print("Working on NN with {0} layers".format(num_layers))
-	dir_case   = dir_mlps  + base_fld.format(target,num_layers)
+	dir_case   = dir_mlps  + base_fld.format(num_layers)
 	os.makedirs(dir_case,exist_ok=True)
 	df_trn.to_csv(base_dat.format(dir_case))
+	print(dir_case)
 
 	#----- Extract layer specific ranges ------------
 	tmp_lr_itl = dict_lr_itl[num_layers]
@@ -419,7 +438,7 @@ for num_layers in list_of_num_layers:
 						)
 			#----------------------------------------------
 
-			return fit.history["val_{0}".format(metric)][-1]
+			return fit.history["val_loss"][-1]
 
 		# ---- Run optimization ----
 		study = optuna.create_study(direction="minimize")
@@ -526,10 +545,19 @@ for num_layers in list_of_num_layers:
 	fits = []
 	grds = []
 	for seed in seeds:
-		dir_seed = dir_case + "seed_{0}/".format(seed)
+		dir_seed = dir_case + base_sed.format(seed)
 		os.makedirs(dir_seed,exist_ok=True)
 
-		if not os.path.exists(base_mlp.format(dir_seed)):
+		
+		file_mlp = base_mlp.format(dir_seed)
+		file_fit = base_fit.format(dir_seed)
+		file_mtr = base_mtr.format(dir_seed)
+		file_res = base_res.format(dir_seed)
+		file_plt_lss = base_plt_lss.format(dir_seed)
+		file_plt_res = base_plt_res.format(dir_seed)
+		file_plt_res2d = base_plt_res2d.format(dir_seed)
+
+		if not os.path.exists(file_mlp):
 			print("Fitting optimal NN of {0} layers with seed {1}".format(
 				num_layers,seed))
 			#--------------- Instantiate model -----------------------
@@ -577,20 +605,20 @@ for num_layers in list_of_num_layers:
 						)
 			#----------------------------------------------
 
-			#------------ Gradients ----------------------
-			df_grd = pd.DataFrame(
-				data=evaluate_gradient(
-						model=optimal_model,
-						x=df_trn[features].to_numpy()
-						).numpy(),
-				index=df_idx.index,
-				columns=["grad_"+feature for feature in features])
-			df_grd["num_layers"] = num_layers
-			df_grd["layer_size"] = layer_size
-			df_grd["seed"] = seed
-			df_grd.reset_index(inplace=True)
-			df_grd.to_csv(base_grd.format(dir_seed))
-			#--------------------------------------------
+			# #------------ Gradients ----------------------
+			# df_grd = pd.DataFrame(
+			# 	data=evaluate_gradient(
+			# 			model=optimal_model,
+			# 			x=df_trn[features].to_numpy()
+			# 			).numpy(),
+			# 	index=df_idx.index,
+			# 	columns=["grad_"+feature for feature in features])
+			# df_grd["num_layers"] = num_layers
+			# df_grd["layer_size"] = layer_size
+			# df_grd["seed"] = seed
+			# df_grd.reset_index(inplace=True)
+			# df_grd.to_csv(base_grd.format(dir_seed))
+			# #--------------------------------------------
 
 			#-------------------- Join losses --------------------
 			df_fit_trn = pd.DataFrame(data={
@@ -610,7 +638,7 @@ for num_layers in list_of_num_layers:
 			df_fit["num_layers"] = num_layers
 			df_fit["layer_size"] = layer_size
 			df_fit["seed"] = seed
-			df_fit.to_csv(base_fit.format(dir_seed))
+			df_fit.to_csv(file_fit)
 			#----------------------------------------------------
 
 			#--------- Save for general plot--------------------------------------------
@@ -621,20 +649,20 @@ for num_layers in list_of_num_layers:
 								"layer_size":[layer_size],
 								"seed":[seed]
 								})
-			for feature in features:
-				df_mtr["min_grad_"+feature] = df_grd["grad_"+feature].abs().min()
-			df_mtr.to_csv(base_mtr.format(dir_seed),index=False)
+			# for feature in features:
+			# 	df_mtr["min_grad_"+feature] = df_grd["grad_"+feature].abs().min()
+			df_mtr.to_csv(file_mtr,index=False)
 			#----------------------------------------------------------------------------
 
 			mlp = {
 				"features":features,
-				"targets":[target],
+				"targets":targets,
 				"num_layers":num_layers,
 				"size_layers":layer_size,
 				"mu_transform":iso_mu,
 				"sd_transform":iso_sd,
-				"covariate_lower_par":covariate_lower_par,
-				"covariate_upper_par":covariate_upper_par,
+				"logL_lower_par":logL_lower_par,
+				"logL_upper_par":logL_upper_par,
 				"weights":optimal_model.get_weights(),
 				"phot_min":phot_min,
 				"domain":domain,
@@ -642,72 +670,145 @@ for num_layers in list_of_num_layers:
 				"val_{0}".format(metric):fit.history["val_{0}".format(metric)][-1],
 				"trn_{0}".format(metric):fit.history["{0}".format(metric)][-1]
 				}
-			with open(base_mlp.format(dir_seed), "wb") as file:
+			with open(file_mlp, "wb") as file:
 				dill.dump(mlp, file)
+
+			# ---------------- Residual diagnostics ----------------
+			# Evaluate on the held-out validation sample in original coordinates.
+			df_res = analyze_residuals(
+				model=optimal_model,
+				x_data=x_val,
+				y_data=y_val,
+				df_original=df_iso,
+				features=features,
+				targets=targets,
+				case="Validation",
+				file_res=file_res,
+				file_plt_res=file_plt_res,
+				file_plt_res2d=file_plt_res2d
+			)
+			# ------------------------------------------------------
 
 		else:
 			print("Reading optimal NN of {0} layers with seed {1}".format(
 				num_layers,seed))
-			df_mtr = pd.read_csv(base_mtr.format(dir_seed))
-			df_fit = pd.read_csv(base_fit.format(dir_seed))
-			df_grd = pd.read_csv(base_grd.format(dir_seed))
+			df_mtr = pd.read_csv(file_mtr)
+			df_fit = pd.read_csv(file_fit)
+
+			# Reconstruct the saved ANN so residual diagnostics can also
+			# be generated when the model was fitted in an earlier run.
+			with open(file_mlp, "rb") as file:
+				mlp = dill.load(file)
+
+			optimal_model = create_custom_model(
+				input_shape=n_features,
+				output_shape=n_targets,
+				num_layers=num_layers,
+				size_layers=mlp["size_layers"],
+				activation_layers=activation_layers,
+				activation_output=activation_output,
+				seed=mlp["seed"]
+			)
+			optimal_model.set_weights(mlp["weights"])
+			# df_grd = pd.read_csv(base_grd.format(dir_seed))
+
+			# with open(base_mlp.format(dir_seed), "rb") as file:
+			# 	mlp = dill.load(file)
+			# 	mlp["logL_lower_par"] = logL_lower_par
+			# 	mlp["logL_upper_par"] = logL_upper_par
+			
+			# with open(base_mlp.format(dir_seed), "wb") as file:
+			# 	dill.dump(mlp, file)
+
+		if not os.path.exists(file_plt_lss):
+			#------------ Plot Loss --------------------------
+			fig, ax = plt.subplots(1, 1, figsize=(16, 8))
+			ax = sns.lineplot(data=df_fit,
+								x="Iteration",
+								y="loss",
+								style="Case",
+								hue="seed",
+								legend=True,
+								)
+			ax.set_xlabel("Iteration")
+			ax.set_ylabel("Loss")
+			ax.set_yscale('log')
+			ax.set_ylim(bottom=1e-4,top=1e-1)
+			fig.savefig(file_plt_lss)
+			plt.close()
+			#------------------------------------------------------
+
 
 		fits.append(df_fit)
 		mtrs.append(df_mtr)
-		grds.append(df_grd)
+		# grds.append(df_grd)
+
+	if not os.path.exists(file_res):
+		analyze_residuals(
+			model=optimal_model,
+			x_data=x_val,
+			y_data=y_val,
+			df_original=df_iso,
+			features=features,
+			targets=targets,
+			case="Validation",
+			file_res=file_res,
+			file_plt_res=file_plt_res,
+			file_plt_res2d=file_plt_res2d
+		)
 
 	df_fit = pd.concat(fits,ignore_index=False)
-	df_grd = pd.concat(grds,ignore_index=False)
+	# df_grd = pd.concat(grds,ignore_index=False)
 
-	if not os.path.exists(base_plt_lss.format(dir_case)):
-		#------------ Plot Loss --------------------------
-		fig, ax = plt.subplots(1, 1, figsize=(16, 8))
-		ax = sns.lineplot(data=df_fit,
-							x="Iteration",
-							y="loss",
-							style="Case",
-							hue="seed",
-							legend=True,
-							)
-		ax.set_xlabel("Iteration")
-		ax.set_ylabel("Loss")
-		ax.set_yscale('log')
-		ax.set_ylim(bottom=1e-4,top=1e-1)
-		fig.savefig(base_plt_lss.format(dir_case))
-		plt.close()
-		#------------------------------------------------------
+	# if not os.path.exists(base_plt_lsss.format(dir_case)):
+	# 	#------------ Plot Loss --------------------------
+	# 	fig, ax = plt.subplots(1, 1, figsize=(16, 8))
+	# 	ax = sns.lineplot(data=df_fit,
+	# 						x="Iteration",
+	# 						y="loss",
+	# 						style="Case",
+	# 						hue="seed",
+	# 						legend=True,
+	# 						)
+	# 	ax.set_xlabel("Iteration")
+	# 	ax.set_ylabel("Loss")
+	# 	ax.set_yscale('log')
+	# 	ax.set_ylim(bottom=1e-4,top=1e-1)
+	# 	fig.savefig(base_plt_lsss.format(dir_case))
+	# 	plt.close()
+	# 	#------------------------------------------------------
 
-	if not os.path.exists(base_plt_mtr.format(dir_case)):
-		#------------ Plot Metric --------------------------
-		fig, ax = plt.subplots(1, 1, figsize=(16, 8))
-		ax = sns.lineplot(data=df_fit,
-							x="Iteration",
-							y="metric",
-							style="Case",
-							hue="seed",
-							legend=True,
-							)
-		ax.set_xlabel("Iteration")
-		ax.set_ylabel("Metric {0}".format(metric))
-		ax.set_yscale('log')
-		ax.set_ylim(bottom=1e-4,top=1e-1)
-		fig.savefig(base_plt_mtr.format(dir_case))
-		plt.close()
-		#------------------------------------------------------
+	# if not os.path.exists(base_plt_mtr.format(dir_case)):
+	# 	#------------ Plot Metric --------------------------
+	# 	fig, ax = plt.subplots(1, 1, figsize=(16, 8))
+	# 	ax = sns.lineplot(data=df_fit,
+	# 						x="Iteration",
+	# 						y="metric",
+	# 						style="Case",
+	# 						hue="seed",
+	# 						legend=True,
+	# 						)
+	# 	ax.set_xlabel("Iteration")
+	# 	ax.set_ylabel("Metric {0}".format(metric))
+	# 	ax.set_yscale('log')
+	# 	ax.set_ylim(bottom=1e-4,top=1e-1)
+	# 	fig.savefig(base_plt_mtr.format(dir_case))
+	# 	plt.close()
+	# 	#------------------------------------------------------
 
-	if not os.path.exists(base_plt_grd.format(dir_case)):
-		#------------ Plot Metric --------------------------
-		palette = sns.diverging_palette(250, 20, 
-			s=50, l=50,n=10,sep=2, center="light", as_cmap=True)
-		fig, ax = plt.subplots(1, 1, figsize=(16, 8))
-		ax = sns.scatterplot(data=df_grd,
-							x=features[0],
-							y=features[1],
-							hue="grad_"+features[0],
-							palette=palette)
-		fig.savefig(base_plt_grd.format(dir_case))
-		plt.close()
-		#------------------------------------------------------
+	# if not os.path.exists(base_plt_grd.format(dir_case)):
+	# 	#------------ Plot Metric --------------------------
+	# 	palette = sns.diverging_palette(250, 20, 
+	# 		s=50, l=50,n=10,sep=2, center="light", as_cmap=True)
+	# 	fig, ax = plt.subplots(1, 1, figsize=(16, 8))
+	# 	ax = sns.scatterplot(data=df_grd,
+	# 						x=features[0],
+	# 						y=features[1],
+	# 						hue="grad_"+features[0],
+	# 						palette=palette)
+	# 	fig.savefig(base_plt_grd.format(dir_case))
+	# 	plt.close()
+	# 	#------------------------------------------------------
 		
 #------------- Plots as function of layers size ------
 df_mtr = pd.concat(mtrs)
@@ -734,31 +835,31 @@ ax.set_ylabel("Metric {0} [mag]".format(metric))
 ax.set_yscale("log")
 ax.set_ylim(bottom=1e-4,top=1e-1)
 ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-fig.savefig(file_mtr.format(target))
+fig.savefig(file_mtrs)
 plt.close()
 #--------------------------------------------------------
 
-#---------------- Gradients -----------------------------
-df_tmp = pd.melt(df_mtr,
-	id_vars=["num_layers","layer_size","seed"], 
-	value_vars=["min_grad_"+feature for feature in features],
-	var_name='Case',
-	value_name='value')
+# #---------------- Gradients -----------------------------
+# df_tmp = pd.melt(df_mtr,
+# 	id_vars=["num_layers","layer_size","seed"], 
+# 	value_vars=["min_grad_"+feature for feature in features],
+# 	var_name='Case',
+# 	value_name='value')
 
-fig, ax = plt.subplots(1, 1, figsize=(16, 8))
-ax = sns.scatterplot(data=df_tmp,
-					x="num_layers",
-					y="value",
-					style="Case",
-					hue="seed",
-					palette="tab10",
-					legend=True,
-					zorder=0)
-sns.move_legend(ax, "upper left", bbox_to_anchor=(1, 1))
-ax.set_xlabel("Number of layers")
-ax.set_ylabel("Min abs gradient")
-ax.set_yscale("log")
-ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-fig.savefig(file_grd.format(target))
-plt.close()
-#--------------------------------------------------------
+# fig, ax = plt.subplots(1, 1, figsize=(16, 8))
+# ax = sns.scatterplot(data=df_tmp,
+# 					x="num_layers",
+# 					y="value",
+# 					style="Case",
+# 					hue="seed",
+# 					palette="tab10",
+# 					legend=True,
+# 					zorder=0)
+# sns.move_legend(ax, "upper left", bbox_to_anchor=(1, 1))
+# ax.set_xlabel("Number of layers")
+# ax.set_ylabel("Min abs gradient")
+# ax.set_yscale("log")
+# ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+# fig.savefig(file_grds)
+# plt.close()
+# #--------------------------------------------------------

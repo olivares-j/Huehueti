@@ -27,23 +27,33 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.ticker import FormatStrFormatter 
 import seaborn as sns
 
-age_range = "20-220Myr"
 # age_range = "15-25Myr"
+# age_range = "15-220Myr"
+# age_range = "20-220Myr"
+age_range = "200-600Myr"
+# age_range = "600-1000Myr"
 
-# experiment = "Optuna_logAge_logL_epochs_5e+02_0.1myr_l3"
-# experiment = "Optuna_logAge_Mini_epochs_5e+02_0.1myr_l2"
-# experiment = "Optuna_logAge_Mini_logTe_epochs_5e+02_0.1myr_l2_FullRankADVI"
-# experiment = "Optuna_logAge_logL_epochs_5e+02_0.1myr_l2_FullRankADVI"
-# experiment = "Optuna_logAge_logL_epochs_5e+02_0.1myr_l3_FullRankADVI"
-experiment = case = "Optuna_InverseTimeDecay_logAge_logL_epochs_5e+02_trials_100_0.1myr_l2_FullRankADVI"
+# age_step = 0.025
+# age_step = 0.05
+# age_step = 0.1
+age_step = 0.5
+# age_step = 1
+
+epochs = 500
+# epochs = 1000
+
+# trials = 100
+trials = 50
+
+experiment = "Optuna_InverseTimeDecay_epochs_{0:1.0e}_trials_{1}_{2}myr".format(epochs,trials,age_step)
 
 
-dir_base = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/{0}/".format(age_range)
+dir_base = "/home/jolivares/Repos/Huehueti@phanocles/validation/synthetic/PARSEC/{0}/".format(age_range)
 dir_fig  = "/home/jolivares/Dropbox/MisArticulos/BayesianAges/Isochrones/Method/Figures/{0}/".format(age_range)
 dir_fig += experiment
 os.makedirs(dir_fig,exist_ok=True)
 
-models = ["base","outliers"]
+models = ["binaries+dispersion"]
 
 if age_range == "15-25Myr":
 	list_of_ages = list(range(15,27,2))
@@ -51,11 +61,13 @@ elif age_range == "20-220Myr":
 	list_of_ages = list(range(20,240,20))
 elif age_range == "200-600Myr":
 	list_of_ages = list(range(200,650,50))
+elif age_range == "600-1000Myr":
+	list_of_ages = list(range(600,1100,100))
 else:
 	sys.exit("Undefined age range")
-	
-list_of_distances = [50,100,200,400]
-list_of_n_stars   = [15,30]
+
+list_of_distances = [100]#,400,200,100]
+list_of_n_stars   = [15]
 list_of_seeds     = [0,1,2,3,4]
 
 do_process = True
@@ -74,25 +86,26 @@ base_name    = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 
 coordinates = ["X","Y","Z","U","V","W"]
 obs_grp_columns = ["Parameter","mean","sd","hdi_2.5%","hdi_97.5%","r_hat","ess_bulk","ess_tail"]
-true_src_columns = ["source_id","logL"]
-obs_src_columns = ["source_id","statistic","log_lum"]
-mapper_true2obs = {"logL":"log_lum"}
+true_src_columns = ["source_id","mass"]
+obs_src_columns = ["source_id","statistic","mass"]
+mapper_true2obs = {"mass":"mass"}
+mapper_obs2true = {"mass_one":"mass"}
 
 #-----------------------------------------------------------------------------
 
 #------------------------Statistics -----------------------------------
 sts_grp = [
-		{"key":"err",     "name":"Error [%]",       "ylim":[-20,20]},
+		{"key":"err",     "name":"Error [%]",       "ylim":[-10,10]},
 		{"key":"unc",     "name":"Uncertainty [%]", "ylim":[0,5]   },
-		{"key":"crd",     "name":"Credibility [%]", "ylim":[0,100]   },
+		{"key":"crd",     "name":"Credibility [%]", "ylim":[0,101]   },
 		# {"key":"r_hat",   "name":"$\\hat{R}$",      "ylim":[0.9,1.5]     },
 		# {"key":"ess_bulk","name":"ESS bulk",        "ylim":[0,None]     },
 		# {"key":"ess_tail","name":"ESS tail",        "ylim":[0,None]     },
 		]
 sts_src = [
-		{"key":"err", "name":"Error [%]"      ,"ylim":[-3,10]},
-		{"key":"unc", "name":"Uncertainty [%]","ylim":[0,10]   },
-		{"key":"crd", "name":"Credibility [%]","ylim":[0,100]   }
+		{"key":"err", "name":"Error [%]"      ,"ylim":[-10,10]},
+		{"key":"unc", "name":"Uncertainty [%]","ylim":[0,5]   },
+		{"key":"crd", "name":"Credibility [%]","ylim":[0,101]   }
 		]
 #-----------------------------------------------------------------------
 
@@ -118,9 +131,15 @@ if do_process:
 						#-----------------------------------------------------
 
 						#-------------------- Observed values -------------------------------
+						if n_stars == 30:
+							obs_src_columns = ["source_id","statistic","mass_one"]
+						else:
+							obs_src_columns = ["source_id","statistic","mass"]
 						df_obs_src = pn.read_csv(file_obs_src, 
 										usecols=obs_src_columns)
 						df_obs_src.set_index(["source_id","statistic"],
+										inplace=True)
+						df_obs_src.rename(columns=mapper_obs2true,
 										inplace=True)
 						df_obs_src = df_obs_src.unstack()
 						
@@ -234,17 +253,19 @@ if do_process:
 if do_plt_grp:
 	print("Plotting group-level parameters")
 	#------------ Read data --------------------------------
-	df_grp = pn.read_hdf(file_data,key="df_grp")
+	df_grp = pn.read_hdf(file_data,key="df_grp")#.groupby("n_stars").get_group(30)
 	#-------------------------------------------------------
 	df_grp.reset_index(inplace=True)
 	for st in sts_grp:
 		fg = sns.relplot(data=df_grp,
 						x="age",
 						y=st["key"],
-						row="distance",
-						style="Model",
-						hue="n_stars",
+						row="Model",
+						style="n_stars",
+						hue="distance",
 						kind="line",
+						# kind="scatter",
+						# hue="seed",
 						palette="tab10",
 						facet_kws={"margin_titles":True},
 						legend="full",
@@ -253,7 +274,7 @@ if do_plt_grp:
 						)
 		fg.set_xlabels("Age [Myr]")
 		fg.set_ylabels(st["name"])
-		fg.set_titles(row_template="{row_name} pc")
+		fg.set_titles(row_template="Model: {row_name}")
 		fg.set(ylim=st["ylim"])
 		sns.move_legend(fg,
 				loc="lower center",
@@ -276,9 +297,9 @@ if do_plt_src:
 		fg = sns.relplot(data=df_src,
 						x="age",
 						y=st["key"],
-						row="distance",
-						style="Model",
-						hue="n_stars",
+						row="Model",
+						style="n_stars",
+						hue="distance",
 						kind="line",
 						palette="tab10",
 						facet_kws={"margin_titles":True},
@@ -288,7 +309,7 @@ if do_plt_src:
 						)
 		fg.set_xlabels("Age [Myr]")
 		fg.set_ylabels(st["name"])
-		fg.set_titles(row_template="{row_name} pc")
+		fg.set_titles(row_template="Model: {row_name}")
 		fg.set(ylim=st["ylim"])
 		sns.move_legend(fg,
 				loc="lower center",

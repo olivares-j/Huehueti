@@ -21,7 +21,7 @@ seed_offset = 2322
 dir_base = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC/{0}".format(age_range)
 base_name = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 
-models = ["base","binaries","base+dispersion"] #,"linear_dispersion"]
+models = ["binaries","base+dispersion"] #,"linear_dispersion"]
 
 if age_range == "1-21Myr":
 	list_of_ages = list(range(1,22,1))

@@ -53,25 +53,25 @@ dir_fig  = "/home/jolivares/Dropbox/MisArticulos/BayesianAges/Isochrones/Method/
 dir_fig += experiment
 os.makedirs(dir_fig,exist_ok=True)
 
-models = ["binaries+dispersion"]
+models = ["binaries"]
 
 if age_range == "15-25Myr":
 	list_of_ages = list(range(15,27,2))
 elif age_range == "20-220Myr":
 	list_of_ages = list(range(20,240,20))
 elif age_range == "200-600Myr":
-	list_of_ages = list(range(200,650,50))
+	list_of_ages = list(sum([[210],list(range(250,600,50)),[590]],[]))
 elif age_range == "600-1000Myr":
 	list_of_ages = list(range(600,1100,100))
 else:
 	sys.exit("Undefined age range")
 
 list_of_distances = [100]#,400,200,100]
-list_of_n_stars   = [15]
+list_of_n_stars   = [15,30]
 list_of_seeds     = [0,1,2,3,4]
 
-do_process = True
-do_plt_grp = True
+do_process = False
+do_plt_grp = False
 do_plt_src = True
 
 file_data     = dir_base + experiment + ".h5"
@@ -86,10 +86,10 @@ base_name    = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 
 coordinates = ["X","Y","Z","U","V","W"]
 obs_grp_columns = ["Parameter","mean","sd","hdi_2.5%","hdi_97.5%","r_hat","ess_bulk","ess_tail"]
-true_src_columns = ["source_id","mass"]
-obs_src_columns = ["source_id","statistic","mass"]
+true_src_columns = ["source_id","mass_secondary"]
+obs_src_columns = ["source_id","statistic","mass_secondary"]
 mapper_true2obs = {"mass":"mass"}
-mapper_obs2true = {"mass_one":"mass"}
+mapper_obs2true = {"mass":"mass"}
 
 #-----------------------------------------------------------------------------
 
@@ -103,8 +103,8 @@ sts_grp = [
 		# {"key":"ess_tail","name":"ESS tail",        "ylim":[0,None]     },
 		]
 sts_src = [
-		{"key":"err", "name":"Error [%]"      ,"ylim":[-10,10]},
-		{"key":"unc", "name":"Uncertainty [%]","ylim":[0,5]   },
+		{"key":"err", "name":"Error [%]"      ,"ylim":[-50,50]},
+		{"key":"unc", "name":"Uncertainty [%]","ylim":[0,50]   },
 		{"key":"crd", "name":"Credibility [%]","ylim":[0,101]   }
 		]
 #-----------------------------------------------------------------------
@@ -131,10 +131,6 @@ if do_process:
 						#-----------------------------------------------------
 
 						#-------------------- Observed values -------------------------------
-						if n_stars == 30:
-							obs_src_columns = ["source_id","statistic","mass_one"]
-						else:
-							obs_src_columns = ["source_id","statistic","mass"]
 						df_obs_src = pn.read_csv(file_obs_src, 
 										usecols=obs_src_columns)
 						df_obs_src.set_index(["source_id","statistic"],
@@ -142,6 +138,7 @@ if do_process:
 						df_obs_src.rename(columns=mapper_obs2true,
 										inplace=True)
 						df_obs_src = df_obs_src.unstack()
+
 						
 						df_obs_grp = pn.read_csv(file_obs_grp,
 										usecols=obs_grp_columns)
@@ -163,6 +160,8 @@ if do_process:
 										inplace=True)
 						df_true_src.columns = pn.MultiIndex.from_product(
 										[df_true_src.columns,["true"]])
+
+						df_true_src.replace(to_replace=0.0,value=np.nan,inplace=True)
 						#----------------------------------------------------
 
 						#---------- Join ------------------------

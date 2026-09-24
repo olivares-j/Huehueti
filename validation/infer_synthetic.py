@@ -36,16 +36,16 @@ if age_range == "1-21Myr":
 elif age_range == "20-220Myr":
 	list_of_ages = list(range(20,240,20))
 elif age_range == "200-600Myr":
-	list_of_ages = list(range(200,650,50))
+	list_of_ages = list(sum([[210],list(range(250,600,50)),[590]],[]))
 elif age_range == "600-1000Myr":
 	list_of_ages = list(range(600,1100,100))
 else:
 	sys.exit("Undefined age range")
 
 
-list_of_models = ["binaries+dispersion"]#,"dispersion","linear_dispersion"]
-list_of_distances = [500]
-list_of_n_stars   = [15]
+list_of_models = ["binaries"]#,"dispersion","linear_dispersion"]
+list_of_distances = [100]
+list_of_n_stars   = [30]
 list_of_seeds     = [0,1,2,3,4]
 
 base_inputs  = "{0}/{1}/{2}/inputs/"

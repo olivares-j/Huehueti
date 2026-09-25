@@ -26,7 +26,7 @@ models = ["binaries"] #,"linear_dispersion"]
 if age_range == "1-21Myr":
 	list_of_ages = list(range(1,22,1))
 elif age_range == "20-220Myr":
-	list_of_ages = list(range(20,240,20))
+	list_of_ages = list(sum([[25],list(range(40,220,20)),[210]],[]))
 elif age_range == "200-600Myr":
 	list_of_ages = list(sum([[210],list(range(250,600,50)),[590]],[]))
 elif age_range == "600-1000Myr":
@@ -35,7 +35,7 @@ else:
 	sys.exit("Undefined age range")
 
 list_of_distances = [100]
-list_of_n_stars   = [15,30]
+list_of_n_stars   = [15,30,50]
 list_of_seeds     = [0,1,2,3,4]
 
 

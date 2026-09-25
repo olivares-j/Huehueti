@@ -35,11 +35,11 @@ age_step = "0.025myr"
 
 #------------- Input data ---------------------------
 max_label = 1 # label >1 are evolved stars that we do not need
-target = "Mini"
-covariate = "logL"
+# target = "Mini"
+# covariate = "logL"
 
-# covariate = "Mini"
-# target = "logL"
+target = "logL"
+covariate = "Mini"
 
 features = ["logAge",covariate]
 n_features = len(features)
@@ -82,16 +82,15 @@ dict_lysz   = {}
 dict_lr_dcr = {}
 dict_lr_itl = {}
 
-match target:
-	case "Mini":
-		match age_range:
-			case "11-21Myr":
-
+match age_range:
+	case "11-21Myr":
+		match target:
+			case "Mini":
 				#------------------ 3 layers ---------------------------
-				dict_btsz[3]   = {"value":None,"low":1,"high":200}
+				dict_btsz[3]   = {"value":None,"low":1,"high":100}
 				dict_lysz[3]   = {"value":None,"low":10,"high":200}
-				dict_lr_dcr[3] = {"value":None,"low":1e-3,"high":5e-1}
-				dict_lr_itl[3] = {"value":None,"low":1e-3,"high":1e-1}
+				dict_lr_dcr[3] = {"value":None,"low":1e-4,"high":3e-1}
+				dict_lr_itl[3] = {"value":None,"low":1e-4,"high":5e-2}
 				#-------------------------------------------------------
 
 				#------------------ 4 layers ---------------------------
@@ -101,8 +100,24 @@ match target:
 				dict_lr_itl[4] = {"value":None,"low":1e-3,"high":1e-1}
 				#-------------------------------------------------------
 
-			case "20-220Myr":
+			case "logL":
+				#------------------ 3 layers ---------------------------
+				dict_btsz[3]   = {"value":None,"low":40,"high":120}
+				dict_lysz[3]   = {"value":None,"low":10,"high":200}
+				dict_lr_dcr[3] = {"value":None,"low":1e-4,"high":3e-1}
+				dict_lr_itl[3] = {"value":None,"low":1e-4,"high":5e-2}
+				#-------------------------------------------------------
 
+				#------------------ 4 layers ---------------------------
+				dict_btsz[4]   = {"value":None,"low":1,"high":200}
+				dict_lysz[4]   = {"value":None,"low":10,"high":200}
+				dict_lr_dcr[4] = {"value":None,"low":1e-3,"high":5e-1}
+				dict_lr_itl[4] = {"value":None,"low":1e-3,"high":1e-1}
+				#-------------------------------------------------------
+
+	case "20-220Myr":
+		match target:
+			case "Mini":
 				#------------------ 3 layers ---------------------------
 				dict_btsz[3]   = {"value":None,"low":10,"high":250}
 				dict_lysz[3]   = {"value":None,"low":10,"high":150}
@@ -117,8 +132,24 @@ match target:
 				dict_lr_itl[4] = {"value":None,"low":1e-3,"high":7e-2}
 				#-------------------------------------------------------
 
-			case "200-600Myr":
+			case "logL":
+				#------------------ 3 layers ---------------------------
+				dict_btsz[3]   = {"value":None,"low":1,"high":200}
+				dict_lysz[3]   = {"value":None,"low":10,"high":200}
+				dict_lr_dcr[3] = {"value":None,"low":1e-3,"high":3e-1}
+				dict_lr_itl[3] = {"value":None,"low":1e-3,"high":1e-1}
+				#-------------------------------------------------------
 
+				#------------------ 4 layers ---------------------------
+				dict_btsz[4]   = {"value":None,"low":25,"high":100}
+				dict_lysz[4]   = {"value":None,"low":10,"high":150}
+				dict_lr_dcr[4] = {"value":None,"low":1e-3,"high":3e-1}
+				dict_lr_itl[4] = {"value":None,"low":1e-3,"high":5e-2}
+				#-------------------------------------------------------
+
+	case "200-600Myr":
+		match target:
+			case "Mini":
 				#------------------ 3 layers ---------------------------
 				dict_btsz[3]   = {"value":None,"low":50,"high":150}
 				dict_lysz[3]   = {"value":None,"low":10,"high":120}
@@ -139,26 +170,8 @@ match target:
 				dict_lr_dcr[5] = {"value":None,"low":1e-3,"high":7e-1}
 				dict_lr_itl[5] = {"value":None,"low":1e-3,"high":9e-2}
 				#-------------------------------------------------------
-	case "logL":
-		match age_range:
-			case "20-220Myr":
 
-				#------------------ 3 layers ---------------------------
-				dict_btsz[3]   = {"value":None,"low":1,"high":200}
-				dict_lysz[3]   = {"value":None,"low":10,"high":200}
-				dict_lr_dcr[3] = {"value":None,"low":1e-3,"high":3e-1}
-				dict_lr_itl[3] = {"value":None,"low":1e-3,"high":1e-1}
-				#-------------------------------------------------------
-
-				#------------------ 4 layers ---------------------------
-				dict_btsz[4]   = {"value":None,"low":25,"high":100}
-				dict_lysz[4]   = {"value":None,"low":10,"high":150}
-				dict_lr_dcr[4] = {"value":None,"low":1e-3,"high":3e-1}
-				dict_lr_itl[4] = {"value":None,"low":1e-3,"high":5e-2}
-				#-------------------------------------------------------
-
-			case "200-600Myr":
-
+			case "logL":
 				#------------------ 3 layers ---------------------------
 				dict_btsz[3]   = {"value":None,"low":50,"high":150}
 				dict_lysz[3]   = {"value":None,"low":10,"high":120}

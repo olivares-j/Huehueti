@@ -110,7 +110,7 @@ class Model_base(Model):
 	def __init__(self,
 		mlp_phot,
 		mlp_mass : None,
-		mlp_logL : None,
+		mlp_logl : None,
 		parameters : dict,
 		prior : dict,
 		identifiers : np.ndarray,

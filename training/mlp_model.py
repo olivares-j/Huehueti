@@ -3,9 +3,31 @@ import os
 import keras
 import numpy as np
 import tensorflow as tf
-from keras.layers import Dense
-from keras.models import Sequential
+from keras.layers import Dense, Concatenate, Lambda
+from keras.models import Model
 from tensorflow.keras import regularizers
+
+SIGMA_FLOOR = 1.0e-6
+SIGMA_INIT = 3.0e-3
+
+def _inverse_softplus(x):
+	return np.log(np.expm1(x))
+
+def heteroscedastic_gaussian_nll(y_true, y_pred):
+	n_targets = tf.shape(y_true)[-1]
+	mu = y_pred[:, :n_targets]
+	sigma = tf.maximum(y_pred[:, n_targets:], SIGMA_FLOOR)
+	residual = y_true - mu
+	log_sigma = tf.math.log(sigma)
+	nll = 0.5 * (tf.square(residual / sigma) + 2.0 * log_sigma
+		+ tf.math.log(tf.constant(2.0 * np.pi, dtype=y_pred.dtype)))
+	return tf.reduce_mean(nll, axis=-1)
+
+def photometric_rmse(y_true, y_pred):
+	n_targets = tf.shape(y_true)[-1]
+	mu = y_pred[:, :n_targets]
+	return tf.sqrt(tf.reduce_mean(tf.square(y_true - mu), axis=-1))
+
 
 SEED = 42
 tf.random.set_seed(SEED)

@@ -46,9 +46,9 @@ n_targets = len(targets)
 list_of_num_layers = [3,4,5]# Number of hidden layers
 seeds = [0] # Seeds for the MLP initializers
 activation_layers = "sigmoid" # Activation functions for each hidden layer
-activation_output = "linear"  # Activation function for the output layer
-loss_function = "mae"
-metric = "root_mean_squared_error"
+activation_output = "linear"  # Activation function for the mean output head
+loss_function = "heteroscedastic_gaussian_nll"
+metric = "photometric_rmse"
 #--------------------------------------------------------------------------
 
 #--------- Fixed Hyperparameters ------------------------------------
@@ -87,9 +87,9 @@ base_sed  = "seed_{0}/"
 base_dat  = "{0}data.csv"
 base_fit  = "{0}fit.csv"
 base_grd  = "{0}gradients.csv"
-base_opt  = "{0}optuna_study_with_{1}_trials.pkl"
+base_opt  = "{0}optuna_study_with_{1}_trials_heteroscedastic_v1.pkl"
 base_mtr  = "{0}metric.csv"
-base_mlp  = "{0}mlp.pkl"
+base_mlp  = "{0}mlp_heteroscedastic_v1.pkl"
 base_plt_opt  = "{0}study.png"
 base_plt_prm  = "{0}study_params.png"
 base_plt_lss  = "{0}loss.png"
@@ -357,7 +357,7 @@ for num_layers in list_of_num_layers:
 			#--------------- Instantiate model -----------------------
 			model = create_custom_model(
 					input_shape=n_features,
-					output_shape=n_targets,  
+					output_shape=n_targets * 2,  
 					num_layers=num_layers,
 					size_layers=layer_size,
 					activation_layers=activation_layers, 
@@ -635,7 +635,10 @@ for num_layers in list_of_num_layers:
 				"seed":seed,
 				"val_{0}".format(metric):fit.history["val_{0}".format(metric)][-1],
 				"trn_{0}".format(metric):fit.history["{0}".format(metric)][-1],
-				"cov_res":cov_res
+				"cov_res":cov_res,
+				"heteroscedastic":True,
+				"output_order":"[mu, sigma]",
+				"sigma_floor":1.0e-6
 				}
 			with open(file_mlp, "wb") as file:
 				dill.dump(mlp, file)

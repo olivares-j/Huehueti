@@ -357,7 +357,7 @@ for num_layers in list_of_num_layers:
 			#--------------- Instantiate model -----------------------
 			model = create_custom_model(
 					input_shape=n_features,
-					output_shape=n_targets * 2,  
+					output_shape=n_targets,  
 					num_layers=num_layers,
 					size_layers=layer_size,
 					activation_layers=activation_layers, 

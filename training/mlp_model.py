@@ -31,21 +31,8 @@ def create_custom_model(
 	activation_layers: str,
 	activation_output: str = "linear",
 	seed: int = 0,
-) -> Sequential:
-	"""
-	Create a Keras Sequential model with the specified number of layers.
-
-	Parameters:
-	- input_shape (int): The number of features in the input data.
-	- num_layers (int): The number of hidden layers in the model.
-	- units (List[int]): A list containing the number of units for each hidden layer.
-	- activations (List[str]): A list containing the activation function for each hidden layer.
-	- output_units (int): The number of units in the output layer.
-	- activation_output (str): The activation function for the output layer (default is 'linear').
-
-	Returns:
-	- model (Sequential): The compiled Keras Sequential model.
-	"""
+) -> Model:
+	"""Create a heteroscedastic ANN returning [mu, sigma]."""
 	if activation_layers == "sigmoid":
 		initializer = keras.initializers.GlorotUniform(seed=seed)
 	elif activation_layers == "relu":
@@ -53,35 +40,26 @@ def create_custom_model(
 	else:
 		sys.exit("activation_layers not recognized!")
 
-	model = Sequential()
-	model.add(keras.Input(shape=(input_shape,)))
+	inputs = keras.Input(shape=(input_shape,))
+	x = inputs
+	for _ in range(num_layers):
+		x = Dense(size_layers, activation=activation_layers,
+			kernel_initializer=initializer, bias_initializer=initializer)(x)
 
-	# Hidden layers
-	for i in range(num_layers):
-		model.add(
-			Dense(
-				size_layers,
-				activation=activation_layers,
-				kernel_initializer=initializer,
-				bias_initializer=initializer,
-				# kernel_regularizer=keras.regularizers.l2(lambda_rgl),
-				# bias_regularizer=keras.regularizers.l2(lambda_rgl)
-			)
-		)
+	mu = Dense(output_shape, activation=activation_output,
+		kernel_initializer=initializer, bias_initializer=initializer,
+		name="photometry_mean")(x)
 
-	# Output layer
-	model.add(
-		Dense(
-			output_shape,
-			activation=activation_output,
-			kernel_initializer=initializer,
-			bias_initializer=initializer,
-			# kernel_regularizer=keras.regularizers.l2(lambda_rgl),
-			# bias_regularizer=keras.regularizers.l2(lambda_rgl)
-		)
-	)
+	sigma_bias = keras.initializers.Constant(_inverse_softplus(SIGMA_INIT))
+	raw_sigma = Dense(output_shape, activation=None,
+		kernel_initializer=initializer, bias_initializer=sigma_bias,
+		name="photometry_sigma_raw")(x)
+	sigma = Lambda(lambda z: tf.nn.softplus(z) + SIGMA_FLOOR,
+		name="photometry_sigma")(raw_sigma)
 
-	return model
+	return Model(inputs=inputs,
+		outputs=Concatenate(name="photometry_and_sigma")([mu, sigma]))
+
 
 def compile_model(model,
 	lr_schedule,

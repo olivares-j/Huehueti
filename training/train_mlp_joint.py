@@ -15,7 +15,7 @@ from mlp_model import analyze_residuals
 
 os.environ["PYTHONHASHSEED"] = "42"
 # os.environ["TF_DETERMINISTIC_OPS"] = "1"
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 SEED = 42
 random.seed(SEED)
@@ -23,15 +23,14 @@ np.random.seed(SEED)
 
 # age_range = "1-21Myr"
 # age_range = "11-21Myr"
-age_range = "20-220Myr"
-# age_range = "200-600Myr"
+# age_range = "20-220Myr"
+age_range = "200-600Myr"
 # age_range = "600-1000Myr"
 
 # age_step = "0.025myr"
 # age_step = "0.05myr"
-age_step = "0.1myr"
-# age_step = "0.1amyr"
-# age_step = "0.5myr"
+# age_step = "0.1myr"
+age_step = "0.5myr"
 # age_step = "1myr"
 
 
@@ -44,7 +43,7 @@ n_targets = len(targets)
 #----------------------------------------------------
 
 # --------------- Model properties --------------------------------
-list_of_num_layers = [5]# Number of hidden layers
+list_of_num_layers = [3,4,5]# Number of hidden layers
 seeds = [0] # Seeds for the MLP initializers
 activation_layers = "sigmoid" # Activation functions for each hidden layer
 activation_output = "linear"  # Activation function for the output layer
@@ -108,7 +107,6 @@ dict_lr_itl = {}
 
 match age_range:
 	case "1-21Myr":
-
 		#------------------ 3 layers -------------------------
 		dict_btsz[3]   = {"value":None,"low":1,"high":100}
 		dict_lysz[3]   = {"value":None,"low":50,"high":150}
@@ -131,7 +129,6 @@ match age_range:
 		#-----------------------------------------------------
 
 	case "11-21Myr":
-
 		#------------------ 3 layers -------------------------
 		dict_btsz[3]   = {"value":None,"low":1,"high":50}
 		dict_lysz[3]   = {"value":None,"low":100,"high":300}
@@ -161,7 +158,6 @@ match age_range:
 		#-----------------------------------------------------
 
 	case "20-220Myr":
-
 		#------------------ 3 layers -------------------------
 		dict_btsz[3]   = {"value":None,"low":10,"high":150}
 		dict_lysz[3]   = {"value":None,"low":10,"high":300}
@@ -184,7 +180,6 @@ match age_range:
 		#-----------------------------------------------------
 
 	case "200-600Myr":
-
 		#------------------ 3 layers -------------------------
 		dict_btsz[3]   = {"value":None,"low":2,"high":100}
 		dict_lysz[3]   = {"value":None,"low":10,"high":200}
@@ -205,10 +200,6 @@ match age_range:
 		dict_lr_dcr[5] = {"value":None,"low":1e-2,"high":7e-1}
 		dict_lr_itl[5] = {"value":None,"low":1e-3,"high":2e-2}
 		#-----------------------------------------------------
-
-
-	
-
 #-----------------------------------------------------------------------------
 
 os.makedirs(dir_mlps,exist_ok=True)
@@ -266,33 +257,7 @@ logL_lower_par,_ = curve_fit(linear,xdata=x,ydata=y_min)
 #-----------------------------------------------------------------
 
 #------------------- Sample weight ---------------------------------
-# variable = df_iso[features[1]].to_numpy()
-# hist, edges = np.histogram(variable, bins=100)
-# bin_ids = np.digitize(variable, edges[:-1])
-# weights = 1 / hist[bin_ids-1]
-# sample_weight = weights/np.mean(weights)
-# sample_weight = np.ones_like(weights)
-# print(np.sum(sample_weight))
-# print(sample_weight.shape)
-# print(sample_weight.min(),sample_weight.max())
-# ax = sns.histplot(data=df_iso,x=features[1],
-# 	color="tab:blue",stat="density",bins=200,element="step",fill=False)
-# sns.histplot(data=df_iso,x=features[1],weights=sample_weight,ax=ax,
-# 	color="tab:green",stat="density",bins=200,element="step",fill=False)
-# plt.show()
-# sys.exit()
 sample_weight = np.ones(len(df_iso))
-
-# critical = (
-#     # (df_iso["logAge"] < 7.6) &
-#     (
-#     # 	(df_iso["logL"] > -1.5) &
-#     # 	(df_iso["logL"] < 0.7)
-#     # ) | (df_iso["logL"] > 2.5)
-#     (df_iso["logL"] > -1) &
-#     	(df_iso["logL"] < 1.0)
-#     ) | (df_iso["logL"] > 4.0)
-# )
 
 critical = (
     (df_iso["logL"] > logL_crw_lower) | (df_iso["logL"] < logL_crw_upper)
@@ -605,21 +570,6 @@ for num_layers in list_of_num_layers:
 						)
 			#----------------------------------------------
 
-			# #------------ Gradients ----------------------
-			# df_grd = pd.DataFrame(
-			# 	data=evaluate_gradient(
-			# 			model=optimal_model,
-			# 			x=df_trn[features].to_numpy()
-			# 			).numpy(),
-			# 	index=df_idx.index,
-			# 	columns=["grad_"+feature for feature in features])
-			# df_grd["num_layers"] = num_layers
-			# df_grd["layer_size"] = layer_size
-			# df_grd["seed"] = seed
-			# df_grd.reset_index(inplace=True)
-			# df_grd.to_csv(base_grd.format(dir_seed))
-			# #--------------------------------------------
-
 			#-------------------- Join losses --------------------
 			df_fit_trn = pd.DataFrame(data={
 				"loss":fit.history["loss"],
@@ -654,6 +604,22 @@ for num_layers in list_of_num_layers:
 			df_mtr.to_csv(file_mtr,index=False)
 			#----------------------------------------------------------------------------
 
+			# ---------------- Residual diagnostics -----------------------------
+			# Evaluate on the held-out validation sample in original coordinates.
+			cov_res = analyze_residuals(
+				model=optimal_model,
+				x_data=x_val,
+				y_data=y_val,
+				df_original=df_iso,
+				features=features,
+				targets=targets,
+				case="Validation",
+				file_res=file_res,
+				file_plt_res=file_plt_res,
+				file_plt_res2d=file_plt_res2d
+				)
+			# -------------------------------------------------------------------
+
 			mlp = {
 				"features":features,
 				"targets":targets,
@@ -668,26 +634,11 @@ for num_layers in list_of_num_layers:
 				"domain":domain,
 				"seed":seed,
 				"val_{0}".format(metric):fit.history["val_{0}".format(metric)][-1],
-				"trn_{0}".format(metric):fit.history["{0}".format(metric)][-1]
+				"trn_{0}".format(metric):fit.history["{0}".format(metric)][-1],
+				"cov_res":cov_res
 				}
 			with open(file_mlp, "wb") as file:
 				dill.dump(mlp, file)
-
-			# ---------------- Residual diagnostics ----------------
-			# Evaluate on the held-out validation sample in original coordinates.
-			df_res = analyze_residuals(
-				model=optimal_model,
-				x_data=x_val,
-				y_data=y_val,
-				df_original=df_iso,
-				features=features,
-				targets=targets,
-				case="Validation",
-				file_res=file_res,
-				file_plt_res=file_plt_res,
-				file_plt_res2d=file_plt_res2d
-			)
-			# ------------------------------------------------------
 
 		else:
 			print("Reading optimal NN of {0} layers with seed {1}".format(
@@ -700,25 +651,35 @@ for num_layers in list_of_num_layers:
 			with open(file_mlp, "rb") as file:
 				mlp = dill.load(file)
 
-			optimal_model = create_custom_model(
-				input_shape=n_features,
-				output_shape=n_targets,
-				num_layers=num_layers,
-				size_layers=mlp["size_layers"],
-				activation_layers=activation_layers,
-				activation_output=activation_output,
-				seed=mlp["seed"]
-			)
-			optimal_model.set_weights(mlp["weights"])
-			# df_grd = pd.read_csv(base_grd.format(dir_seed))
+			if "cov_res" not in mlp.keys():
 
-			# with open(base_mlp.format(dir_seed), "rb") as file:
-			# 	mlp = dill.load(file)
-			# 	mlp["logL_lower_par"] = logL_lower_par
-			# 	mlp["logL_upper_par"] = logL_upper_par
-			
-			# with open(base_mlp.format(dir_seed), "wb") as file:
-			# 	dill.dump(mlp, file)
+				optimal_model = create_custom_model(
+					input_shape=n_features,
+					output_shape=n_targets,
+					num_layers=num_layers,
+					size_layers=mlp["size_layers"],
+					activation_layers=activation_layers,
+					activation_output=activation_output,
+					seed=mlp["seed"]
+				)
+				optimal_model.set_weights(mlp["weights"])
+
+				cov_res = analyze_residuals(
+					model=optimal_model,
+					x_data=x_val,
+					y_data=y_val,
+					df_original=df_iso,
+					features=features,
+					targets=targets,
+					case="Validation",
+					file_res=file_res,
+					file_plt_res=file_plt_res,
+					file_plt_res2d=file_plt_res2d
+					)
+				mlp["cov_res"] = cov_res
+
+				with open(file_mlp, "wb") as file:
+					dill.dump(mlp, file)
 
 		if not os.path.exists(file_plt_lss):
 			#------------ Plot Loss --------------------------
@@ -738,77 +699,11 @@ for num_layers in list_of_num_layers:
 			plt.close()
 			#------------------------------------------------------
 
-
 		fits.append(df_fit)
 		mtrs.append(df_mtr)
 		# grds.append(df_grd)
 
-	if not os.path.exists(file_res):
-		analyze_residuals(
-			model=optimal_model,
-			x_data=x_val,
-			y_data=y_val,
-			df_original=df_iso,
-			features=features,
-			targets=targets,
-			case="Validation",
-			file_res=file_res,
-			file_plt_res=file_plt_res,
-			file_plt_res2d=file_plt_res2d
-		)
-
 	df_fit = pd.concat(fits,ignore_index=False)
-	# df_grd = pd.concat(grds,ignore_index=False)
-
-	# if not os.path.exists(base_plt_lsss.format(dir_case)):
-	# 	#------------ Plot Loss --------------------------
-	# 	fig, ax = plt.subplots(1, 1, figsize=(16, 8))
-	# 	ax = sns.lineplot(data=df_fit,
-	# 						x="Iteration",
-	# 						y="loss",
-	# 						style="Case",
-	# 						hue="seed",
-	# 						legend=True,
-	# 						)
-	# 	ax.set_xlabel("Iteration")
-	# 	ax.set_ylabel("Loss")
-	# 	ax.set_yscale('log')
-	# 	ax.set_ylim(bottom=1e-4,top=1e-1)
-	# 	fig.savefig(base_plt_lsss.format(dir_case))
-	# 	plt.close()
-	# 	#------------------------------------------------------
-
-	# if not os.path.exists(base_plt_mtr.format(dir_case)):
-	# 	#------------ Plot Metric --------------------------
-	# 	fig, ax = plt.subplots(1, 1, figsize=(16, 8))
-	# 	ax = sns.lineplot(data=df_fit,
-	# 						x="Iteration",
-	# 						y="metric",
-	# 						style="Case",
-	# 						hue="seed",
-	# 						legend=True,
-	# 						)
-	# 	ax.set_xlabel("Iteration")
-	# 	ax.set_ylabel("Metric {0}".format(metric))
-	# 	ax.set_yscale('log')
-	# 	ax.set_ylim(bottom=1e-4,top=1e-1)
-	# 	fig.savefig(base_plt_mtr.format(dir_case))
-	# 	plt.close()
-	# 	#------------------------------------------------------
-
-	# if not os.path.exists(base_plt_grd.format(dir_case)):
-	# 	#------------ Plot Metric --------------------------
-	# 	palette = sns.diverging_palette(250, 20, 
-	# 		s=50, l=50,n=10,sep=2, center="light", as_cmap=True)
-	# 	fig, ax = plt.subplots(1, 1, figsize=(16, 8))
-	# 	ax = sns.scatterplot(data=df_grd,
-	# 						x=features[0],
-	# 						y=features[1],
-	# 						hue="grad_"+features[0],
-	# 						palette=palette)
-	# 	fig.savefig(base_plt_grd.format(dir_case))
-	# 	plt.close()
-	# 	#------------------------------------------------------
 		
 #------------- Plots as function of layers size ------
 df_mtr = pd.concat(mtrs)
@@ -838,28 +733,3 @@ ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 fig.savefig(file_mtrs)
 plt.close()
 #--------------------------------------------------------
-
-# #---------------- Gradients -----------------------------
-# df_tmp = pd.melt(df_mtr,
-# 	id_vars=["num_layers","layer_size","seed"], 
-# 	value_vars=["min_grad_"+feature for feature in features],
-# 	var_name='Case',
-# 	value_name='value')
-
-# fig, ax = plt.subplots(1, 1, figsize=(16, 8))
-# ax = sns.scatterplot(data=df_tmp,
-# 					x="num_layers",
-# 					y="value",
-# 					style="Case",
-# 					hue="seed",
-# 					palette="tab10",
-# 					legend=True,
-# 					zorder=0)
-# sns.move_legend(ax, "upper left", bbox_to_anchor=(1, 1))
-# ax.set_xlabel("Number of layers")
-# ax.set_ylabel("Min abs gradient")
-# ax.set_yscale("log")
-# ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-# fig.savefig(file_grds)
-# plt.close()
-# #--------------------------------------------------------

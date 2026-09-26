@@ -102,10 +102,10 @@ match age_range:
 
 			case "logL":
 				#------------------ 3 layers ---------------------------
-				dict_btsz[3]   = {"value":None,"low":40,"high":120}
+				dict_btsz[3]   = {"value":None,"low":1,"high":150}
 				dict_lysz[3]   = {"value":None,"low":10,"high":200}
-				dict_lr_dcr[3] = {"value":None,"low":1e-4,"high":3e-1}
-				dict_lr_itl[3] = {"value":None,"low":1e-4,"high":5e-2}
+				dict_lr_dcr[3] = {"value":None,"low":1e-4,"high":15e-2}
+				dict_lr_itl[3] = {"value":None,"low":2e-2,"high":5e-2}
 				#-------------------------------------------------------
 
 				#------------------ 4 layers ---------------------------

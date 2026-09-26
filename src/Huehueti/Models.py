@@ -439,16 +439,9 @@ class Model_base_dispersion(Model):
 		#------------------------------------------------------------------------------------
 
 		#--------------- Intrinsic dispersion --------------------------
-		if prior["dispersion"]["family"] == "Gamma":
-			photometric_dispersion = pm.Gamma("photometric_dispersion",
-							alpha=2.0,
-							beta=prior["dispersion"]["beta"],
-							dims="photometry_names")
-		elif prior["dispersion"]["family"] == "Exponential":
-			photometric_dispersion = pm.Exponential("photometric_dispersion",
-							lam=prior["dispersion"]["lambda"],
-							dims="photometry_names")
-
+		photometric_dispersion = pm.Deterministic("photometric_dispersion",
+						var=pytensor.shared(mlp_phot.sd_res),
+						dims="photometry_names")
 		sigma_photometry = pt.sqrt(photometry_sd**2 + pt.broadcast_to(photometric_dispersion**2,
 						shape=(n_stars, n_bands)))
 		#---------------------------------------------------------------

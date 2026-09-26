@@ -249,9 +249,12 @@ class MLP_phot:
 			sd        = tmp["sd_transform"]
 			cvrlwpar  = tmp["logL_lower_par"]
 			cvruppar  = tmp["logL_upper_par"]
+			cov_res   = tmp["cov_res"]
 
 		self.bands = targets
 		self.domain = domain
+		self.cov_res = cov_res
+		self.sd_res  = np.sqrt(np.diag(cov_res))
 	
 		self.W = weights[::2]
 		self.b = weights[1::2]

@@ -33,14 +33,14 @@ import seaborn as sns
 
 # age_range = "15-25Myr"
 # age_range = "15-220Myr"
-# age_range = "20-220Myr"
-age_range = "200-600Myr"
+age_range = "20-220Myr"
+# age_range = "200-600Myr"
 # age_range = "600-1000Myr"
 
 # age_step = 0.025
 # age_step = 0.05
-# age_step = 0.1
-age_step = 0.5
+age_step = 0.1
+# age_step = 0.5
 # age_step = 1
 
 epochs = 500
@@ -71,17 +71,17 @@ dir_fig += experiment
 os.makedirs(dir_fig, exist_ok=True)
 
 
-models = ["binaries"]
+models = ["base"]
 
 
 if age_range == "15-25Myr":
     list_of_ages = list(range(15, 27, 2))
 
 elif age_range == "20-220Myr":
-    list_of_ages = list(range(20, 240, 20))
+    list_of_ages = list(sum([[25],list(range(40,220,20)),[210]],[]))
 
 elif age_range == "200-600Myr":
-    list_of_ages = list(sum([[210], list(range(250, 600, 50)), [590]], []))
+    list_of_ages = list(range(200, 650, 50))# list(sum([[210], list(range(250, 600, 50)), [590]], []))
 
 elif age_range == "600-1000Myr":
     list_of_ages = list(range(600, 1100, 100))
@@ -90,8 +90,8 @@ else:
     sys.exit("Undefined age range")
 
 
-list_of_distances = [100]
-list_of_n_stars = [15,30,50]
+list_of_distances = [100,500]
+list_of_n_stars = [15,30]
 list_of_seeds = [0, 1, 2, 3]
 
 
@@ -99,7 +99,7 @@ list_of_seeds = [0, 1, 2, 3]
 do_process = True
 do_plt_grp = True
 do_plt_src = True
-do_plt_bnr = True
+do_plt_bnr = False
 
 
 file_data = dir_base + experiment + ".h5"
@@ -128,6 +128,7 @@ obs_grp_columns = [
 ]
 
 requested_src_parameters = ["mass","mass_secondary","mass_ratio"]
+q_column = "mass_ratio"
 
 # Group-level diagnostics
 sts_grp = [
@@ -436,9 +437,9 @@ if do_process:
 
                         #------------------------------------------------
 
-                        df_src = df_src[
-                            ["err", "unc", "crd"]
-                        ]
+                        # df_src = df_src[
+                        #     ["err", "unc", "crd"]
+                        # ]
 
                         df_src = df_src.reset_index()
 
@@ -632,19 +633,17 @@ if do_plt_src:
     df_src.reset_index(inplace=True)
 
     # All source-level parameters stored during processing.
-    current_parameters = sorted(
+    source_parameters = sorted(
         df_src["Parameter"].unique()
     )
 
     print(
         "Source-level parameters:",
-        requested_src_parameters
+        source_parameters
     )
 
     # Produce one independent PNG for every parameter and diagnostic.
-    for parameter in requested_src_parameters:
-
-        assert parameter in current_parameters, "Error, requestd parameter {0} not in stored file!".format(parameter)
+    for parameter in source_parameters:
 
         df_parameter = df_src.loc[
             df_src["Parameter"] == parameter
@@ -719,113 +718,31 @@ if do_plt_bnr:
         key="df_src"
     )
 
-    df_src.reset_index(inplace=True)
-
     # The binary diagnostics require the secondary mass parameter.
-    if "mass_secondary" not in df_src["Parameter"].unique():
+    assert "mass_secondary" in df_src["Parameter"].unique(),print(
+            "Error: mass_secondary not found in source-level "
+            "parameters.")
 
-        print(
-            "WARNING: mass_secondary not found in source-level "
-            "parameters. Binary diagnostics skipped."
-        )
+    df_mr = df_src.query("Parameter == 'mass_ratio'").loc[:,["source_id","true"]].rename(columns={"true":"q_true"})
+    df_m1 = df_src.query("Parameter == 'mass_secondary'").loc[:,["source_id","mean"]].rename(columns={"mean":"M1"})
+    df_m2 = df_src.query("Parameter == 'mass_secondary'").loc[:,["source_id","err"]].rename(columns={"err":"err"})
 
-    else:
-
-        #---------------------------------------------------------------
-        # Read the true mass ratio from the synthetic catalogues.
-
-        q_frames = []
-
-        for model in models:
-
-            for age in list_of_ages:
-
-                for distance in list_of_distances:
-
-                    for n_stars in list_of_n_stars:
-
-                        for seed in list_of_seeds:
-
-                            name = base_name.format(
-                                age,
-                                distance,
-                                n_stars,
-                                seed
-                            )
-
-                            file_syn_src = base_syn_src.format(
-                                dir_base,
-                                model,
-                                name
-                            )
-
-                            df_syn = pn.read_csv(
-                                file_syn_src
-                            )
-
-                            # q_actual is preferred because it represents
-                            # the actual ratio after model-grid selection.
-                            if "mass_ratio" in df_syn.columns:
-                                q_column = "mass_ratio"
-
-                            elif "mass_ratio_requested" in df_syn.columns:
-                                q_column = "mass_ratio_requested"
-
-                            else:
-                                print(
-                                    "WARNING: no mass_ratio or mass_ratio_requested "
-                                    "found in " + file_syn_src
-                                )
-                                continue
-
-                            if "source_id" not in df_syn.columns:
-                                continue
-
-                            df_q_tmp = df_syn[
-                                ["source_id", q_column]
-                            ].copy()
-
-                            df_q_tmp.rename(
-                                columns={
-                                    q_column: "q_true"
-                                },
-                                inplace=True
-                            )
-
-                            df_q_tmp["Model"] = model
-                            df_q_tmp["age"] = age
-                            df_q_tmp["distance"] = distance
-                            df_q_tmp["n_stars"] = n_stars
-                            df_q_tmp["seed"] = seed
-
-                            q_frames.append(
-                                df_q_tmp
-                            )
-
-        if len(q_frames) == 0:
-
-            print(
-                "WARNING: no mass-ratio information found. "
-                "Binary diagnostics skipped."
-            )
-
-        else:
-
-            df_q = pn.concat(
-                q_frames,
-                ignore_index=True
-            )
-
-            #-----------------------------------------------------------
-            # Select secondary-mass diagnostics.
-
-            df_m2 = df_src.loc[
-                df_src["Parameter"] == "mass_secondary"
-            ].copy()
-
-            df_m2 = pn.merge(
+    df_m2 = pn.merge(
                 df_m2,
-                df_q,
+                df_mr,
+                on=[
+                    "Model",
+                    "age",
+                    "distance",
+                    "n_stars",
+                    "seed",
+                    "source_id"
+                ],
+                how="inner"
+            )
+    df_m2 = pn.merge(
+                df_m2,
+                df_m1,
                 on=[
                     "Model",
                     "age",
@@ -837,355 +754,363 @@ if do_plt_bnr:
                 how="inner"
             )
 
-            df_m2 = df_m2.loc[
+
+    df_m2 = df_m2.loc[
                 np.isfinite(df_m2["q_true"]) &
                 np.isfinite(df_m2["err"])
             ].copy()
 
-            #-----------------------------------------------------------
-            # 1. Relative M2 error versus true q, colour-coded by age.
-
-            fig, ax = plt.subplots(
-                figsize=(7, 5)
-            )
-
-            scatter = ax.scatter(
-                df_m2["q_true"],
-                df_m2["err"],
-                c=df_m2["age"],
-                cmap="viridis",
-                s=35,
-                alpha=0.75,
-                edgecolors="none"
-            )
-
-            ax.axhline(
-                0.0,
-                linestyle="--",
-                linewidth=1.0
-            )
-
-            ax.set_xlabel(
-                r"$q_{\rm true}$"
-            )
-
-            ax.set_ylabel(
-                r"$100(M_{2,\rm inf}-M_{2,\rm true})/"
-                r"M_{2,\rm true}$ [\%]"
-            )
-
-            ax.set_title(
-                "Secondary-mass recovery"
-            )
-
-            cbar = fig.colorbar(
-                scatter,
-                ax=ax
-            )
-
-            cbar.set_label(
-                "Age [Myr]"
-            )
-
-            ax.grid(
-                alpha=0.2
-            )
-
-            fig.tight_layout()
-
-            filename = (
-                dir_fig +
-                "/binary-M2-error-vs-q_true.png"
-            )
-
-            fig.savefig(
-                filename,
-                dpi=300,
-                bbox_inches="tight"
-            )
-
-            plt.close(fig)
-
-            #-----------------------------------------------------------
-            # 2. Same diagnostic separately for each number of sources.
-
-            for n_stars in sorted(
-                df_m2["n_stars"].unique()
-            ):
-
-                df_plot = df_m2.loc[
-                    df_m2["n_stars"] == n_stars
-                ]
-
-                fig, ax = plt.subplots(
-                    figsize=(7, 5)
-                )
-
-                scatter = ax.scatter(
-                    df_plot["q_true"],
-                    df_plot["err"],
-                    c=df_plot["age"],
-                    cmap="viridis",
-                    s=35,
-                    alpha=0.75,
-                    edgecolors="none"
-                )
-
-                ax.axhline(
-                    0.0,
-                    linestyle="--",
-                    linewidth=1.0
-                )
-
-                ax.set_xlabel(
-                    r"$q_{\rm true}$"
-                )
-
-                ax.set_ylabel(
-                    r"$100(M_{2,\rm inf}-M_{2,\rm true})/"
-                    r"M_{2,\rm true}$ [\%]"
-                )
-
-                ax.set_title(
-                    "Secondary-mass recovery "
-                    + f"({n_stars} sources)"
-                )
-
-                cbar = fig.colorbar(
-                    scatter,
-                    ax=ax
-                )
-
-                cbar.set_label(
-                    "Age [Myr]"
-                )
-
-                ax.grid(
-                    alpha=0.2
-                )
-
-                fig.tight_layout()
-
-                filename = (
-                    dir_fig +
-                    f"/binary-M2-error-vs-q_true-n{n_stars:d}.png"
-                )
-
-                fig.savefig(
-                    filename,
-                    dpi=300,
-                    bbox_inches="tight"
-                )
-
-                plt.close(fig)
-
-                #-------------------------------------------------------
-                # 3. Binned median and 16-84% interval versus q_true.
-
-                df_bin = df_plot.copy()
-
-                # Fixed q bins provide the same x-axis for all ages.
-                q_edges = np.linspace(
-                    0.0,
-                    1.0,
-                    11
-                )
-
-                df_bin["q_bin"] = pn.cut(
-                    df_bin["q_true"],
-                    bins=q_edges,
-                    include_lowest=True
-                )
-
-                grouped = df_bin.groupby(
-                    "q_bin",
-                    observed=True
-                )["err"]
-
-                summary = grouped.agg(
-                    median="median",
-                    q16=lambda x: np.percentile(x, 16),
-                    q84=lambda x: np.percentile(x, 84),
-                    count="count"
-                )
-
-                summary["q"] = [
-                    interval.mid
-                    for interval in summary.index
-                ]
-
-                summary = summary.loc[
-                    summary["count"] > 0
-                ]
-
-                fig, ax = plt.subplots(
-                    figsize=(7, 5)
-                )
-
-                ax.plot(
-                    summary["q"],
-                    summary["median"],
-                    marker="o",
-                    linewidth=1.5,
-                    label="Median"
-                )
-
-                ax.fill_between(
-                    summary["q"],
-                    summary["q16"],
-                    summary["q84"],
-                    alpha=0.25,
-                    label="16–84%"
-                )
-
-                ax.axhline(
-                    0.0,
-                    linestyle="--",
-                    linewidth=1.0
-                )
-
-                ax.set_xlabel(
-                    r"$q_{\rm true}$"
-                )
-
-                ax.set_ylabel(
-                    r"$100(M_{2,\rm inf}-M_{2,\rm true})/"
-                    r"M_{2,\rm true}$ [\%]"
-                )
-
-                ax.set_title(
-                    "Secondary-mass recovery "
-                    + f"({n_stars} sources)"
-                )
-
-                ax.legend()
-
-                ax.grid(
-                    alpha=0.2
-                )
-
-                fig.tight_layout()
-
-                filename = (
-                    dir_fig +
-                    f"/binary-M2-error-vs-q_true-binned"
-                    f"-n{n_stars:d}.png"
-                )
-
-                fig.savefig(
-                    filename,
-                    dpi=300,
-                    bbox_inches="tight"
-                )
-
-                plt.close(fig)
-
-                print(
-                    "  saved:",
-                    filename
-                )
-
-            #-----------------------------------------------------------
-            # 4. Overall binned diagnostic, combining all N.
-
-            df_bin = df_m2.copy()
-
-            q_edges = np.linspace(
-                0.0,
-                1.0,
-                11
-            )
-
-            df_bin["q_bin"] = pn.cut(
-                df_bin["q_true"],
-                bins=q_edges,
-                include_lowest=True
-            )
-
-            grouped = df_bin.groupby(
-                "q_bin",
-                observed=True
-            )["err"]
-
-            summary = grouped.agg(
-                median="median",
-                q16=lambda x: np.percentile(x, 16),
-                q84=lambda x: np.percentile(x, 84),
-                count="count"
-            )
-
-            summary["q"] = [
-                interval.mid
-                for interval in summary.index
-            ]
-
-            summary = summary.loc[
-                summary["count"] > 0
-            ]
-
-            fig, ax = plt.subplots(
-                figsize=(7, 5)
-            )
-
-            ax.plot(
-                summary["q"],
-                summary["median"],
-                marker="o",
-                linewidth=1.5,
-                label="Median"
-            )
-
-            ax.fill_between(
-                summary["q"],
-                summary["q16"],
-                summary["q84"],
-                alpha=0.25,
-                label="16–84%"
-            )
-
-            ax.axhline(
-                0.0,
-                linestyle="--",
-                linewidth=1.0
-            )
-
-            ax.set_xlabel(
-                r"$q_{\rm true}$"
-            )
-
-            ax.set_ylabel(
-                r"$100(M_{2,\rm inf}-M_{2,\rm true})/"
-                r"M_{2,\rm true}$ [\%]"
-            )
-
-            ax.set_title(
-                "Secondary-mass recovery"
-            )
-
-            ax.legend()
-
-            ax.grid(
-                alpha=0.2
-            )
-
-            fig.tight_layout()
-
-            filename = (
-                dir_fig +
-                "/binary-M2-error-vs-q_true-binned.png"
-            )
-
-            fig.savefig(
-                filename,
-                dpi=300,
-                bbox_inches="tight"
-            )
-
-            plt.close(fig)
-
-            print(
-                "  saved:",
-                filename
-            )
+    df_m2.reset_index(inplace=True)
+
+
+    #-----------------------------------------------------------
+    # 1. Relative M2 error versus true q, colour-coded by age.
+
+    fig, ax = plt.subplots(
+        figsize=(7, 5)
+    )
+
+    scatter = ax.scatter(
+        df_m2["q_true"],
+        df_m2["err"],
+        c=df_m2["M1"],
+        cmap="viridis",
+        s=35,
+        alpha=0.75,
+        edgecolors="none"
+    )
+
+    ax.axhline(
+        0.0,
+        linestyle="--",
+        linewidth=1.0
+    )
+
+    ax.set_xlabel(
+        r"$q_{\rm true}$"
+    )
+
+    ax.set_ylabel(
+        r"$100(M_{2,\rm inf}-M_{2,\rm true})/"
+        r"M_{2,\rm true}$ [\%]"
+    )
+
+    ax.set_title(
+        "Secondary-mass recovery"
+    )
+
+    cbar = fig.colorbar(
+        scatter,
+        ax=ax
+    )
+
+    # cbar.set_label(
+    #     "Age [Myr]"
+    # )
+
+    cbar.set_label(
+        "Mass primary [Msun]"
+    )
+
+    ax.grid(
+        alpha=0.2
+    )
+
+    fig.tight_layout()
+
+    filename = (
+        dir_fig +
+        "/binary-M2-error-vs-q_true.png"
+    )
+
+    fig.savefig(
+        filename,
+        dpi=300,
+        bbox_inches="tight"
+    )
+
+    plt.close(fig)
+
+    #-----------------------------------------------------------
+    # 2. Same diagnostic separately for each number of sources.
+
+    for n_stars in sorted(
+        df_m2["n_stars"].unique()
+    ):
+
+        df_plot = df_m2.loc[
+            df_m2["n_stars"] == n_stars
+        ]
+
+        fig, ax = plt.subplots(
+            figsize=(7, 5)
+        )
+
+        scatter = ax.scatter(
+            df_plot["q_true"],
+            df_plot["err"],
+            c=df_plot["age"],
+            cmap="viridis",
+            s=35,
+            alpha=0.75,
+            edgecolors="none"
+        )
+
+        ax.axhline(
+            0.0,
+            linestyle="--",
+            linewidth=1.0
+        )
+
+        ax.set_xlabel(
+            r"$q_{\rm true}$"
+        )
+
+        ax.set_ylabel(
+            r"$100(M_{2,\rm inf}-M_{2,\rm true})/"
+            r"M_{2,\rm true}$ [\%]"
+        )
+
+        ax.set_title(
+            "Secondary-mass recovery "
+            + f"({n_stars} sources)"
+        )
+
+        cbar = fig.colorbar(
+            scatter,
+            ax=ax
+        )
+
+        cbar.set_label(
+            "Age [Myr]"
+        )
+
+        ax.grid(
+            alpha=0.2
+        )
+
+        fig.tight_layout()
+
+        filename = (
+            dir_fig +
+            f"/binary-M2-error-vs-q_true-n{n_stars:d}.png"
+        )
+
+        fig.savefig(
+            filename,
+            dpi=300,
+            bbox_inches="tight"
+        )
+
+        plt.close(fig)
+
+        #-------------------------------------------------------
+        # 3. Binned median and 16-84% interval versus q_true.
+
+        df_bin = df_plot.copy()
+
+        # Fixed q bins provide the same x-axis for all ages.
+        q_edges = np.linspace(
+            0.0,
+            1.0,
+            11
+        )
+
+        df_bin["q_bin"] = pn.cut(
+            df_bin["q_true"],
+            bins=q_edges,
+            include_lowest=True
+        )
+
+        grouped = df_bin.groupby(
+            "q_bin",
+            observed=True
+        )["err"]
+
+        summary = grouped.agg(
+            median="median",
+            q16=lambda x: np.percentile(x, 16),
+            q84=lambda x: np.percentile(x, 84),
+            count="count"
+        )
+
+        summary["q"] = [
+            interval.mid
+            for interval in summary.index
+        ]
+
+        summary = summary.loc[
+            summary["count"] > 0
+        ]
+
+        fig, ax = plt.subplots(
+            figsize=(7, 5)
+        )
+
+        ax.plot(
+            summary["q"],
+            summary["median"],
+            marker="o",
+            linewidth=1.5,
+            label="Median"
+        )
+
+        ax.fill_between(
+            summary["q"],
+            summary["q16"],
+            summary["q84"],
+            alpha=0.25,
+            label="16–84%"
+        )
+
+        ax.axhline(
+            0.0,
+            linestyle="--",
+            linewidth=1.0
+        )
+
+        ax.set_xlabel(
+            r"$q_{\rm true}$"
+        )
+
+        ax.set_ylabel(
+            r"$100(M_{2,\rm inf}-M_{2,\rm true})/"
+            r"M_{2,\rm true}$ [\%]"
+        )
+
+        ax.set_title(
+            "Secondary-mass recovery "
+            + f"({n_stars} sources)"
+        )
+
+        ax.legend()
+
+        ax.grid(
+            alpha=0.2
+        )
+
+        fig.tight_layout()
+
+        filename = (
+            dir_fig +
+            f"/binary-M2-error-vs-q_true-binned"
+            f"-n{n_stars:d}.png"
+        )
+
+        fig.savefig(
+            filename,
+            dpi=300,
+            bbox_inches="tight"
+        )
+
+        plt.close(fig)
+
+        print(
+            "  saved:",
+            filename
+        )
+
+        #-----------------------------------------------------------
+        # 4. Overall binned diagnostic, combining all N.
+
+        df_bin = df_m2.copy()
+
+        q_edges = np.linspace(
+            0.0,
+            1.0,
+            11
+        )
+
+        df_bin["q_bin"] = pn.cut(
+            df_bin["q_true"],
+            bins=q_edges,
+            include_lowest=True
+        )
+
+        grouped = df_bin.groupby(
+            "q_bin",
+            observed=True
+        )["err"]
+
+        summary = grouped.agg(
+            median="median",
+            q16=lambda x: np.percentile(x, 16),
+            q84=lambda x: np.percentile(x, 84),
+            count="count"
+        )
+
+        summary["q"] = [
+            interval.mid
+            for interval in summary.index
+        ]
+
+        summary = summary.loc[
+            summary["count"] > 0
+        ]
+
+        fig, ax = plt.subplots(
+            figsize=(7, 5)
+        )
+
+        ax.plot(
+            summary["q"],
+            summary["median"],
+            marker="o",
+            linewidth=1.5,
+            label="Median"
+        )
+
+        ax.fill_between(
+            summary["q"],
+            summary["q16"],
+            summary["q84"],
+            alpha=0.25,
+            label="16–84%"
+        )
+
+        ax.axhline(
+            0.0,
+            linestyle="--",
+            linewidth=1.0
+        )
+
+        ax.set_xlabel(
+            r"$q_{\rm true}$"
+        )
+
+        ax.set_ylabel(
+            r"$100(M_{2,\rm inf}-M_{2,\rm true})/"
+            r"M_{2,\rm true}$ [\%]"
+        )
+
+        ax.set_title(
+            "Secondary-mass recovery"
+        )
+
+        ax.legend()
+
+        ax.grid(
+            alpha=0.2
+        )
+
+        fig.tight_layout()
+
+        filename = (
+            dir_fig +
+            "/binary-M2-error-vs-q_true-binned.png"
+        )
+
+        fig.savefig(
+            filename,
+            dpi=300,
+            bbox_inches="tight"
+        )
+
+        plt.close(fig)
+
+        print(
+            "  saved:",
+            filename
+        )
 
 #-----------------------------------------------------------------------

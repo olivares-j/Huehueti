@@ -313,10 +313,6 @@ class Huehueti:
 			if parameters["distance_sd"] is None:
 				assert "distance_sd" in prior.keys(), KeyError('Please, provide a prior for distance_sd parameter')
 				assert prior["distance_sd"]["family"] in ["Exponential","Gamma"], KeyError("Unknown family of distance_sd prior")
-
-		if "photometric_dispersion" in parameters.keys():
-			assert "photometric_dispersion" in prior.keys(), KeyError('Please, provide a prior for photometric_dispersion parameter')
-			assert prior["photometric_dispersion"]["family"] in ["Exponential","Gamma"], KeyError("Unknown family of photometric_dispersion prior")
 		#--------------------------------------------------------------------------------------------------------------------------------------------
 
 
@@ -1335,7 +1331,7 @@ if __name__ == "__main__":
 	# Example run when executed as a script. These defaults assume a certain
 	# directory layout (data/, mlps/, outputs/) relative to the current working dir.
 
-	model = "binaries+dispersion"
+	model = "base+dispersion"
 
 	age_range = "200-600Myr"
 	trials = 50
@@ -1354,12 +1350,12 @@ if __name__ == "__main__":
 	dir_outputs = dir_base + "{0}/".format(case)
 	base_name   = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 	file_data = dir_inputs  + base_name.format(age,distance,n_stars,seed)+".csv"
-	dir_out   = dir_outputs + base_name.format(age,distance,n_stars,seed)+"_Gamma:1000/"
+	dir_out   = dir_outputs + base_name.format(age,distance,n_stars,seed)+"_l4_test/"
 	os.makedirs(dir_out,exist_ok=True)
 	print(dir_out)
 
 	files_mlps = {
-	"Phot":dir_mlps + case + "/l4/seed_0_wgt_1/mlp.pkl",
+	"Phot":dir_mlps + case + "/l4/seed_0/mlp.pkl",
 	"Mini":dir_mlps + case + "/Mini_l4/seed_0/mlp.pkl",
 	"logL":dir_mlps + case + "/logL_l4/seed_0/mlp.pkl",
 	}
@@ -1396,12 +1392,6 @@ if __name__ == "__main__":
 		"distance_sd":{
 			"family": "Exponential",
 			"scale" : 5.
-			},
-		"dispersion":{
-			"family": "Gamma",
-			# "family": "Exponential",
-			"beta" : 1000.,
-			# "lambda":100.0,
 			},
 		"extinction":{
 			"family": "Uniform",

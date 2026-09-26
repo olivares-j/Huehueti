@@ -36,37 +36,37 @@ if age_range == "1-21Myr":
 elif age_range == "20-220Myr":
 	list_of_ages = list(sum([[25],list(range(40,220,20)),[210]],[]))
 elif age_range == "200-600Myr":
-	list_of_ages = list(sum([[210],list(range(250,600,50)),[590]],[]))
+	list_of_ages = list(sum([list(range(200,600,50)),[210,590]],[]))
 elif age_range == "600-1000Myr":
 	list_of_ages = list(range(600,1100,100))
 else:
 	sys.exit("Undefined age range")
 
 
-list_of_models = ["binaries"]#,"dispersion","linear_dispersion"]
+list_of_models = ["base+dispersion"]
 list_of_distances = [100]
-list_of_n_stars   = [50]
+list_of_n_stars   = [15]
 list_of_seeds     = [0,1,2,3,4]
 
 base_inputs  = "{0}/{1}/{2}/inputs/"
 base_outputs = "{0}/{1}/{2}/{3}/"
 base_name    = "a{0:d}_d{1:d}_n{2:d}_s{3:d}"
 
-#------------------- 20-220 Myr --------------------------------------------
-# files_mlps = {
-# 	"Phot":dir_mlps + case + "/l5/seed_0/mlp.pkl",
-# 	"Mini":dir_mlps + case + "/Mini_l3/seed_0/mlp.pkl",
-# 	"logL":dir_mlps + case + "/logL_l3/seed_0/mlp.pkl",
-# 	}
-#---------------------------------------------------------------------------
 
-#------------------- 200-600 Myr --------------------------------------------
-files_mlps = {
-	"Phot":dir_mlps + case + "/l4/seed_0_wgt_1/mlp.pkl",
-	"Mini":dir_mlps + case + "/Mini_l4/seed_0/mlp.pkl",
-	"logL":dir_mlps + case + "/logL_l4/seed_0/mlp.pkl",
-	}
-#---------------------------------------------------------------------------
+match age_range:
+	case "20-220Myr":
+		files_mlps = {
+			"Phot":dir_mlps + case + "/l4/seed_0/mlp.pkl",
+			"Mini":dir_mlps + case + "/Mini_l3/seed_0/mlp.pkl",
+			"logL":dir_mlps + case + "/logL_l3/seed_0/mlp.pkl",
+			}
+
+	case "200-600Myr":
+		files_mlps = {
+			"Phot":dir_mlps + case + "/l4/seed_0/mlp.pkl",
+			"Mini":dir_mlps + case + "/Mini_l4/seed_0/mlp.pkl",
+			"logL":dir_mlps + case + "/logL_l4/seed_0/mlp.pkl",
+			}
 
 features = ["logAge","logL"]
 
@@ -100,36 +100,6 @@ def set_prior(age,distance):
 	"distance_sd":{
 		"family": "Exponential",
 		"scale" : 5.
-		},
-	"dispersion":{
-		# "family": "Gamma",
-		"family": "Exponential",
-		"beta" : 1000.0,
-		"lambda":1000.0,
-		},
-	"linear_dispersion":{
-		"family": "Exponential",
-		# "family": "SoftPlus",
-		"sigma_intercept" : 20.0,
-		"sigma_slope":5.0,
-		},
-	"outliers":{
-		"family":"Normal",
-		# "family":"Exponential",
-		"scale":0.01,
-		},
-	"shift":{
-		"dispersion":{
-		# "family": "Gamma",
-		"family": "Exponential",
-		"beta" : 100.0,
-		"lambda":1000.0,
-			},
-		"outliers":{
-		# "family":"Normal",
-		"family":"Exponential",
-		"scale":0.01,
-			},
 		},
 	"extinction":{
 		"family": "Uniform",

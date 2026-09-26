@@ -195,6 +195,11 @@ def analyze_residuals(model, x_data, y_data, df_original,features,targets, case,
 
 	df_res.to_csv(file_res, index=False)
 
+	#------ Compute the covariance matrix of the residuals ----------
+	res = df_res.loc[:,[f"res_{target}" for target in targets]].to_numpy()
+	covariance_res = np.cov(res, rowvar=False)
+	#---------------------------------------------------
+
 	# Print useful numerical diagnostics.
 	print(f"\nResidual diagnostics: {case}")
 	for i, target in enumerate(targets):
@@ -308,5 +313,5 @@ def analyze_residuals(model, x_data, y_data, df_original,features,targets, case,
 
 	plt.close(fig)
 
-	return df_res
+	return covariance_res
 # -----------------------------------------------------------------------------

@@ -65,23 +65,39 @@ def compile_model(model,
 	lr_schedule,
 	beta_1=0.9,
 	beta_2=0.999,
-	loss: str = "mean_squared_error",
-	metrics: list = ["mean_squared_error"],
+	loss="heteroscedastic_gaussian_nll",
+	metrics=None,
 	clipnorm: float = 1.0,
 	use_ema=False,
 	):
+	"""Compile the heteroscedastic ANN with sample-weight-compatible loss."""
+	if metrics is None:
+		metrics = ["photometric_rmse"]
+
+	loss_map = {
+		"heteroscedastic_gaussian_nll": heteroscedastic_gaussian_nll,
+		"gaussian_nll": heteroscedastic_gaussian_nll,
+		"mae": "mae",
+		"mean_squared_error": "mean_squared_error",
+	}
+	metric_map = {
+		"photometric_rmse": photometric_rmse,
+		"root_mean_squared_error": photometric_rmse,
+	}
+	resolved_loss = loss_map.get(loss, loss)
+	resolved_metrics = [metric_map.get(metric, metric) for metric in metrics]
+
 	model.compile(
 		optimizer=keras.optimizers.Adam(
-						learning_rate=lr_schedule,
-						beta_1=beta_1,
-						beta_2=beta_2,
-						clipnorm=clipnorm,
-						use_ema=use_ema
-						),
-		loss=loss,
-		metrics=metrics,
-		)
-
+			learning_rate=lr_schedule,
+			beta_1=beta_1,
+			beta_2=beta_2,
+			clipnorm=clipnorm,
+			use_ema=use_ema
+		),
+		loss=resolved_loss,
+		metrics=resolved_metrics,
+	)
 	return model
 
 
@@ -158,9 +174,9 @@ def analyze_residuals(model, x_data, y_data, df_original,features,targets, case,
 	x_array = x_data.to_numpy()
 	y_array = y_data.to_numpy()
 
-	y_pred = model.predict(x_array, verbose=0)
-
-	# Residual = model prediction - true value.
+	y_pred_full = model.predict(x_array, verbose=0)
+	# Six outputs are [mu, sigma]; residual diagnostics use the mean head.
+	y_pred = y_pred_full[:, :n_targets]
 	residual = y_pred - y_array
 
 	# Store all relevant quantities in one table.

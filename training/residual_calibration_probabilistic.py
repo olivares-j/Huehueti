@@ -69,7 +69,7 @@ def calibration_statistics(y_true, mu, sigma):
     return pd.DataFrame(rows), residual, z
 
 
-def make_calibration_plots(df, residual, z, sigma, targets, log_age, log_l):
+def make_calibration_plots(dir_seed, df, residual, z, sigma, targets, log_age, log_l):
     """Create diagnostic plots without imposing a color/style scheme."""
     n_targets = len(targets)
 
@@ -79,12 +79,12 @@ def make_calibration_plots(df, residual, z, sigma, targets, log_age, log_l):
         ax.scatter(sigma[:, b], np.abs(residual[:, b]), s=5, alpha=0.25)
         xx = np.linspace(np.nanmin(sigma[:, b]), np.nanmax(sigma[:, b]), 200)
         ax.plot(xx, xx, label="|residual| = sigma")
-        ax.set_xlabel(r"Predicted $\\sigma$ [mag]")
+        ax.set_xlabel("Predicted $\\sigma$ [mag]")
         ax.set_ylabel(r"|residual| [mag]")
         ax.set_title(target)
         ax.legend()
     fig.tight_layout()
-    fig.savefig("residual_calibration_sigma.png", dpi=200)
+    fig.savefig(dir_seed+"residual_calibration_sigma.png", dpi=200)
     plt.close(fig)
 
     fig, axes = plt.subplots(n_targets, 1, figsize=(9, 4 * n_targets), squeeze=False)
@@ -94,11 +94,11 @@ def make_calibration_plots(df, residual, z, sigma, targets, log_age, log_l):
         ax.axvline(-1, linestyle="--")
         ax.axvline(1, linestyle="--")
         ax.axvline(0, linestyle="-")
-        ax.set_xlabel(r"standardized residual $z=(\\mu-y)/\\sigma$")
+        ax.set_xlabel("standardized residual $z=(\\mu-y)/\\sigma$")
         ax.set_ylabel("density")
         ax.set_title(target)
     fig.tight_layout()
-    fig.savefig("residual_calibration_z.png", dpi=200)
+    fig.savefig(dir_seed+"residual_calibration_z.png", dpi=200)
     plt.close(fig)
 
     # Calibration as a function of the two ANN inputs.
@@ -116,12 +116,13 @@ def make_calibration_plots(df, residual, z, sigma, targets, log_age, log_l):
         axes[1].set_title(target + ": predicted sigma [mag]")
         fig.colorbar(sc, ax=axes[1], label="sigma [mag]")
         fig.tight_layout()
-        fig.savefig("residual_calibration_domain_{0}.png".format(target), dpi=200)
+        fig.savefig(dir_seed+"residual_calibration_domain_{0}.png".format(target), dpi=200)
         plt.close(fig)
 
 
 def run_calibration(
-    file_iso,
+    dir_seed,
+    df_iso,
     file_mlp,
     validation_split=0.2,
     seed_split=0,
@@ -135,15 +136,6 @@ def run_calibration(
 
     features = mlp["features"]
     targets = mlp["targets"]
-
-    df_iso = pd.read_csv(
-        file_iso, delimiter=r"\\s+", header="infer", comment="#"
-    )
-    df_iso = df_iso.loc[df_iso["label"] <= max_label]
-    df_iso = df_iso.loc[:, features + targets]
-
-    if age_range == "11-21Myr":
-        df_iso = df_iso.loc[df_iso["logL"] < 4.3]
 
     # Reproduce the training transformation and split exactly.
     x = df_iso.loc[:, features].copy()
@@ -166,6 +158,7 @@ def run_calibration(
     stats.to_csv("residual_calibration_statistics.csv", index=False)
 
     make_calibration_plots(
+        dir_seed,
         stats,
         residual,
         z,

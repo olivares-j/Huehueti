@@ -12,6 +12,7 @@ from sklearn.model_selection import train_test_split
 from scipy.optimize import curve_fit
 from mlp_model_probabilistic import create_custom_model, compile_model, evaluate_gradient,learning_rate_scheduler
 from mlp_model_probabilistic import analyze_residuals
+from residual_calibration_probabilistic import run_calibration
 
 os.environ["PYTHONHASHSEED"] = "42"
 # os.environ["TF_DETERMINISTIC_OPS"] = "1"
@@ -43,7 +44,7 @@ n_targets = len(targets)
 #----------------------------------------------------
 
 # --------------- Model properties --------------------------------
-list_of_num_layers = [4]# Number of hidden layers
+list_of_num_layers = [3]# Number of hidden layers
 seeds = [0] # Seeds for the MLP initializers
 activation_layers = "sigmoid" # Activation functions for each hidden layer
 activation_output = "linear"  # Activation function for the mean output head
@@ -78,7 +79,7 @@ logL_crw_upper = 1.2
 dir_base  = "/home/jolivares/Models/PARSEC/{0}/".format(age_range)
 # Remove the # from the row contain the header in the input file
 file_iso  = dir_base + "Gaia_EDR3_{0}.dat".format(age_step) # Input file
-dir_mlps  = dir_base + "Optuna_{0}_epochs_{1:1.0e}_trials_{2}_{3}_probabilisitc/".format(
+dir_mlps  = dir_base + "Optuna_{0}_epochs_{1:1.0e}_trials_{2}_{3}_probabilistic/".format(
 lr_decay_function,epochs,optimization_trials,age_step)
 file_mtrs  = dir_mlps + "Metrics.png"
 file_grds  = dir_mlps + "Gradients.png"
@@ -89,7 +90,7 @@ base_fit  = "{0}fit.csv"
 base_grd  = "{0}gradients.csv"
 base_opt  = "{0}optuna_study_with_{1}_trials.pkl"
 base_mtr  = "{0}metric.csv"
-base_mlp  = "{0}mlp_probabilisitc.pkl"
+base_mlp  = "{0}mlp_probabilistic.pkl"
 base_plt_opt  = "{0}study.png"
 base_plt_prm  = "{0}study_params.png"
 base_plt_lss  = "{0}loss.png"
@@ -684,6 +685,20 @@ for num_layers in list_of_num_layers:
 				with open(file_mlp, "wb") as file:
 					dill.dump(mlp, file)
 
+			#-------------- Calibration diagnostics -------------------
+			stats = run_calibration(
+				dir_seed=dir_seed,
+				df_iso=df_iso,
+				file_mlp=file_mlp,
+				validation_split=validation_split,
+				seed_split=seed_split,
+				max_label=max_label,
+				age_range=age_range,
+				)
+
+			print(stats)
+			#----------------------------------------------
+
 		if not os.path.exists(file_plt_lss):
 			#------------ Plot Loss --------------------------
 			fig, ax = plt.subplots(1, 1, figsize=(16, 8))
@@ -697,7 +712,7 @@ for num_layers in list_of_num_layers:
 			ax.set_xlabel("Iteration")
 			ax.set_ylabel("Loss")
 			ax.set_yscale('log')
-			ax.set_ylim(bottom=1e-4,top=1e-1)
+			# ax.set_ylim(bottom=1e-4,top=1e-1)
 			fig.savefig(file_plt_lss)
 			plt.close()
 			#------------------------------------------------------

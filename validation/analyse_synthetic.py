@@ -71,7 +71,7 @@ dir_fig += experiment
 os.makedirs(dir_fig, exist_ok=True)
 
 
-models = ["base"]
+models = ["base","base+dispersion"]
 
 
 if age_range == "15-25Myr":
@@ -96,7 +96,7 @@ list_of_seeds     = [0,1,2,3,4]
 
 
 # Main switches
-do_process = False
+do_process = True
 do_plt_grp = True
 do_plt_src = True
 do_plt_bnr = False

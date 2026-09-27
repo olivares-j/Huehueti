@@ -43,7 +43,7 @@ else:
 	sys.exit("Undefined age range")
 
 
-list_of_models = ["binaries"]
+list_of_models = ["binaries+dispersion"]
 list_of_distances = [100]
 list_of_n_stars   = [15,30,50]
 list_of_seeds     = [0,1,2,3,4]

@@ -24,7 +24,7 @@ age_step = 0.5    #200-600Myr
 init_iters = int(5e5)
 
 
-case = "Optuna_InverseTimeDecay_epochs_5e+02_trials_50_{0}myr".format(age_step)
+case = "Optuna_InverseTimeDecay_epochs_5e+02_trials_50_{0}myr_deterministic".format(age_step)
 init_method = "fullrank_advi"
 
 dir_base = "/home/jolivares/Repos/Huehueti/validation/synthetic/PARSEC"
@@ -36,16 +36,16 @@ if age_range == "1-21Myr":
 elif age_range == "20-220Myr":
 	list_of_ages = list(sum([[25],list(range(40,220,20)),[210]],[]))
 elif age_range == "200-600Myr":
-	list_of_ages = list(sum([list(range(200,600,50)),[210,590]],[]))
+	list_of_ages = list(sum([list(range(200,650,50)),[210,590]],[]))
 elif age_range == "600-1000Myr":
 	list_of_ages = list(range(600,1100,100))
 else:
 	sys.exit("Undefined age range")
 
 
-list_of_models = ["base+dispersion"]
+list_of_models = ["binaries"]
 list_of_distances = [100]
-list_of_n_stars   = [15]
+list_of_n_stars   = [15,30,50]
 list_of_seeds     = [0,1,2,3,4]
 
 base_inputs  = "{0}/{1}/{2}/inputs/"

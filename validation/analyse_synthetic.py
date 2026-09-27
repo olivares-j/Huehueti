@@ -33,14 +33,14 @@ import seaborn as sns
 
 # age_range = "15-25Myr"
 # age_range = "15-220Myr"
-age_range = "20-220Myr"
-# age_range = "200-600Myr"
+# age_range = "20-220Myr"
+age_range = "200-600Myr"
 # age_range = "600-1000Myr"
 
 # age_step = 0.025
 # age_step = 0.05
-age_step = 0.1
-# age_step = 0.5
+# age_step = 0.1
+age_step = 0.5
 # age_step = 1
 
 epochs = 500
@@ -50,7 +50,7 @@ epochs = 500
 trials = 50
 
 experiment = (
-    "Optuna_InverseTimeDecay_epochs_{0:1.0e}_trials_{1}_{2}myr"
+    "Optuna_InverseTimeDecay_epochs_{0:1.0e}_trials_{1}_{2}myr_deterministic"
     .format(epochs, trials, age_step)
 )
 
@@ -81,7 +81,7 @@ elif age_range == "20-220Myr":
     list_of_ages = list(sum([[25],list(range(40,220,20)),[210]],[]))
 
 elif age_range == "200-600Myr":
-    list_of_ages = list(range(200, 650, 50))# list(sum([[210], list(range(250, 600, 50)), [590]], []))
+    list_of_ages = list(sum([list(range(200,650,50)),[210,590]],[]))
 
 elif age_range == "600-1000Myr":
     list_of_ages = list(range(600, 1100, 100))
@@ -91,12 +91,12 @@ else:
 
 
 list_of_distances = [100,500]
-list_of_n_stars = [15,30]
-list_of_seeds = [0, 1, 2, 3]
+list_of_n_stars   = [15,30]
+list_of_seeds     = [0,1,2,3,4]
 
 
 # Main switches
-do_process = True
+do_process = False
 do_plt_grp = True
 do_plt_src = True
 do_plt_bnr = False
@@ -127,7 +127,8 @@ obs_grp_columns = [
     "ess_tail"
 ]
 
-requested_src_parameters = ["mass","mass_secondary","mass_ratio"]
+plot_src_parameters = ["mass"]
+plot_bnr_parameters = ["mass","mass_secondary","mass_ratio"]
 q_column = "mass_ratio"
 
 # Group-level diagnostics
@@ -140,8 +141,8 @@ sts_grp = [
 
 # Source-level diagnostics
 sts_src = [
-    {"key": "err", "name": "Error [%]", "ylim": [-50, 50]},
-    {"key": "unc", "name": "Uncertainty [%]", "ylim": [0, 50]},
+    {"key": "err", "name": "Error [%]", "ylim": [-10, 10]},
+    {"key": "unc", "name": "Uncertainty [%]", "ylim": [0, 5]},
     {"key": "crd", "name": "Credibility [%]", "ylim": [0, 101]},
 ]
 
@@ -643,7 +644,7 @@ if do_plt_src:
     )
 
     # Produce one independent PNG for every parameter and diagnostic.
-    for parameter in source_parameters:
+    for parameter in plot_src_parameters:
 
         df_parameter = df_src.loc[
             df_src["Parameter"] == parameter
